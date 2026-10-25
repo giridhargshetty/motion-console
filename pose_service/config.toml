@@ -1,0 +1,10 @@
+# Pose service config. Thresholds live here, not in code (CLAUDE.md §7).
+
+[camera]
+index = 0
+width = 640
+height = 480
+
+[server]
+host = "127.0.0.1"
+port = 8765

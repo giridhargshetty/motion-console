@@ -1,0 +1,16 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# MediaPipe model files (downloaded on demand)
+*.task
+
+# Godot
+godot/.godot/
+
+# OS
+Thumbs.db
+desktop.ini
+.DS_Store
