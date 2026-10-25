@@ -51,11 +51,16 @@ if ! tailscale status >/dev/null 2>&1; then
     echo "Tailscale needs a one-time sign-in: run  sudo tailscale up  and open the link it prints."
 fi
 
-step "Python environment (a few minutes)"
+step "Python 3.12 environment (a few minutes)"
+# The pinned packages (pygame 2.6.1 in particular) have no wheels for newer system Pythons such as
+# Ubuntu 26.04's 3.14, so use uv to get Python 3.12, the same version as the dev laptop.
+if ! command -v uv >/dev/null && [ ! -x "$HOME/.local/bin/uv" ]; then
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+fi
+export PATH="$HOME/.local/bin:$PATH"
 cd "$REPO_DIR"
-[ -d .venv ] || python3 -m venv .venv
-.venv/bin/pip install -q --upgrade pip
-.venv/bin/pip install -q -r requirements.txt
+[ -d .venv ] || uv venv --seed --python 3.12 .venv   # --seed: include pip (console.sh uses it)
+uv pip install --python .venv/bin/python -q -r requirements.txt
 .venv/bin/python -c "import sys; sys.path.insert(0, 'prototype'); import player; player.get_model('full'); player.get_model('lite')"
 if [ ! -f prototype/config.local.toml ]; then
     printf '# Settings for this machine only (not in git). Overrides prototype/config.toml.\n[game]\nfullscreen = true\n' \
