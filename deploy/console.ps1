@@ -41,7 +41,7 @@ if ($client) {
 $Python = Join-Path $Root '.venv\Scripts\pythonw.exe'
 while ($true) {
     Log 'starting game'
-    $game = Start-Process -FilePath $Python -ArgumentList 'prototype\fruit_slice.py' -WorkingDirectory $Root `
+    $game = Start-Process -FilePath $Python -ArgumentList 'prototype\console.py' -WorkingDirectory $Root `
         -RedirectStandardError (Join-Path $Logs 'game_errors.log') -PassThru -Wait
     Log "game exited with code $($game.ExitCode)"
     if ($game.ExitCode -eq 10) { break }

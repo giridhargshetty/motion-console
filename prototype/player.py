@@ -2,8 +2,9 @@
 
 Pose runs on its own thread on the newest camera frame, so the game can draw at display
 rate while tracking runs at camera rate. latest() returns (seq, frame, people, t), where
-people is a list (up to [pose] max_players) of keypoint lists: 33 x [x, y, visibility],
+people is a list (up to [pose] max_players) of keypoint lists: 33 x [x, y, visibility, z],
 normalised 0..1, origin top-left, mirrored like the §3 schema; empty when nobody is seen.
+z is MediaPipe's depth relative to the hips, on about the same scale as x (smaller = nearer the camera).
 get_player() returns just the first person, or None.
 
 Also crops DroidCam's black letterbox bars, and with rotate = "auto" works out which
@@ -430,7 +431,7 @@ class PoseTracker:
             # Pose runs on the unmirrored picture so left/right keypoint labels stay true to
             # the player's body; only x is mirrored, together with the displayed frame.
             shown = cv2.flip(frame, 1) if self.mirror else frame
-            people = [[[1 - p.x if self.mirror else p.x, p.y, p.visibility] for p in lm]
+            people = [[[1 - p.x if self.mirror else p.x, p.y, p.visibility, p.z] for p in lm]
                       for lm in result.pose_landmarks]
             with self._lock:
                 self._latest = (self._latest[0] + 1, shown, people, t)

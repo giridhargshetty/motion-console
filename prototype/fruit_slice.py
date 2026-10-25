@@ -1,11 +1,14 @@
 r"""Phase 1 prototype: Fruit Slice. Slice flying fruit with your hands over the live camera picture.
 
-Run from the repo root:   .venv\Scripts\python prototype\fruit_slice.py
+Run the console from the repo root:   .venv\Scripts\python prototype\console.py
+This module also holds the console's lobby (calibration, player count, game picker, tracking
+people) in Game, and the shared Renderer; console.py runs the main loop.
 
 Flow (no keyboard needed):
   1. Calibrate: stand in the middle, whole body in view, hold still.
-  2. Menu: hold a hand on CLASSIC (60 s, fruit only) or SURVIVAL (bombs end the game).
-  3. Raise both hands above your head to start, then 3-2-1.
+  2. How many players, then the game picker: FRUIT SLICE (or BOXING, see boxing.py).
+  3. Menu: hold a hand on CLASSIC (60 s, fruit only) or SURVIVAL (bombs cost lives).
+  4. Raise both hands above your head to start, then 3-2-1.
 Keys (for the grown-up): R rotate camera  S skeleton  D debug line  F fullscreen  Ctrl+Q quit
 Remote (D-pad): Left/Right pick a game, Down opens Wi-Fi/settings, OK = start. Esc/Back = back.
 Settings: prototype/config.toml
@@ -22,7 +25,6 @@ import json
 import math
 import random
 import sys
-import time
 import tomllib
 from pathlib import Path
 
@@ -38,8 +40,6 @@ import fruits as fr  # noqa: E402
 import players  # noqa: E402
 import player as pl  # noqa: E402
 import theme  # noqa: E402
-from console_setup import Setup  # noqa: E402
-from network import Network  # noqa: E402
 from pose_service.filters import OneEuroFilter  # noqa: E402
 
 SCORES_FILE = HERE / "highscores.json"
@@ -150,7 +150,9 @@ class Game:
         self.best = scores
         self.state, self.state_t, self.hold = "calibrate", 0.0, 0.0
         self.mode = None
-        self.hover = {"classic": 0.0, "survival": 0.0, "players": 0.0, "settings": 0.0, "one": 0.0, "two": 0.0}
+        self.hover = {"classic": 0.0, "survival": 0.0, "players": 0.0, "settings": 0.0, "one": 0.0, "two": 0.0,
+                      "games": 0.0, "fruit": 0.0, "boxing": 0.0}
+        self.want_boxing = False  # picked on the game picker: the console switches to boxing
         self.want_settings = False
         self.just_calibrated = False
         self.calib_ok, self.calib_msg = False, ""
@@ -261,9 +263,17 @@ class Game:
 
     def menu_zones(self):
         a = self.aspect
-        # The strip above head height (change players, Wi-Fi): grown-ups reach it, resting arms never do.
+        # The strip above head height (back to games, Wi-Fi): grown-ups reach it, resting arms never do.
         return {"classic": (0.05 * a, 0.14, 0.47 * a, 0.46),
                 "survival": (0.53 * a, 0.14, 0.95 * a, 0.46),
+                "games": (0.05 * a, 0.015, 0.47 * a, 0.09),
+                "settings": (0.53 * a, 0.015, 0.95 * a, 0.09)}
+
+    def game_zones(self):
+        """The game picker: one box per game, and the strip (players, Wi-Fi) above head height."""
+        a = self.aspect
+        return {"fruit": (0.05 * a, 0.14, 0.47 * a, 0.46),
+                "boxing": (0.53 * a, 0.14, 0.95 * a, 0.46),
                 "players": (0.05 * a, 0.015, 0.47 * a, 0.09),
                 "settings": (0.53 * a, 0.015, 0.95 * a, 0.09)}
 
@@ -273,7 +283,7 @@ class Game:
 
     def hover_needed(self, zone):
         m = self.cfg["menu"]
-        return m["settings_hover_seconds"] if zone in ("players", "settings") else m["hover_seconds"]
+        return m["settings_hover_seconds"] if zone in ("players", "settings", "games") else m["hover_seconds"]
 
     @property
     def want_people(self):
@@ -341,9 +351,14 @@ class Game:
             n = {pygame.K_LEFT: 1, pygame.K_RIGHT: 2}.get(key)
             if n:
                 self.choose_players(n)
+        elif self.state == "games":
+            choice = {pygame.K_LEFT: "fruit", pygame.K_RIGHT: "boxing",
+                      pygame.K_UP: "players", pygame.K_DOWN: "settings"}.get(key)
+            if choice:
+                self.pick_game(choice)
         elif self.state == "menu":
             choice = {pygame.K_LEFT: "classic", pygame.K_RIGHT: "survival",
-                      pygame.K_UP: "players", pygame.K_DOWN: "settings"}.get(key)
+                      pygame.K_UP: "games", pygame.K_DOWN: "settings"}.get(key)
             if choice:
                 self.select(choice)
         elif self.state in ("ready", "over") and key in (pygame.K_RETURN, pygame.K_KP_ENTER):
@@ -396,7 +411,28 @@ class Game:
         self.n_players = n
         self.hover = dict.fromkeys(self.hover, 0.0)
         self.sounds.append("select")
-        self.goto("menu")
+        self.goto("games")
+
+    def _games(self, fresh, dt, gone):
+        if gone > self.cfg["calibrate"]["lost_seconds"]:
+            return self.goto("calibrate")
+        for zone, (x0, y0, x1, y1) in self.game_zones().items():
+            inside = any(h.pos and x0 <= h.pos[0] <= x1 and y0 <= h.pos[1] <= y1 for h in self.hands)
+            self.hover[zone] = self.hover[zone] + dt if inside else max(0.0, self.hover[zone] - 2 * dt)
+            if self.hover[zone] >= self.hover_needed(zone):
+                return self.pick_game(zone)
+
+    def pick_game(self, choice):
+        self.hover = dict.fromkeys(self.hover, 0.0)
+        self.sounds.append("select")
+        if choice == "fruit":
+            self.goto("menu")
+        elif choice == "boxing":
+            self.want_boxing = True  # the console hands over to the boxing game
+        elif choice == "players":
+            self.goto("players")
+        elif choice == "settings":
+            self.want_settings = True
 
     def _menu(self, fresh, dt, gone):
         if gone > self.cfg["calibrate"]["lost_seconds"]:
@@ -412,8 +448,8 @@ class Game:
         self.sounds.append("select")
         if choice == "settings":
             self.want_settings = True  # the main loop opens the setup screens
-        elif choice == "players":
-            self.goto("players")
+        elif choice == "games":
+            self.goto("games")
         else:
             self.mode = choice
             self.goto("ready")
@@ -639,7 +675,26 @@ def make_sounds():
     tb = secs(1.4)
     rumble = np.convolve(rng.uniform(-1, 1, tb.size), np.ones(40) / 8, "same")
     boom = (rumble + np.sin(2 * np.pi * 50 * tb)) * np.exp(-tb * 2.5)
-    return {
+    # boxing: a thud for your punch, a heavier thump when you're hit, a clack for a block, the bell
+    tp = secs(0.16)
+    thud = (np.convolve(rng.uniform(-1, 1, tp.size), np.ones(25) / 6, "same") + np.sin(2 * np.pi * 90 * tp)) \
+        * np.exp(-tp * 28)
+    th = secs(0.3)
+    thump = (np.convolve(rng.uniform(-1, 1, th.size), np.ones(40) / 7, "same") + np.sin(2 * np.pi * 60 * th)) \
+        * np.exp(-th * 14)
+    tc = secs(0.08)
+    clack = rng.uniform(-1, 1, tc.size) * np.exp(-tc * 60)
+    tbell = secs(1.2)
+    bell = (np.sin(2 * np.pi * 880 * tbell) + 0.5 * np.sin(2 * np.pi * 2210 * tbell)) * np.exp(-tbell * 3)
+    sounds = {
+        "punch": snd(thud, 0.9),
+        "hit": snd(thump, 0.9),
+        "block": snd(clack + 0.4 * tone(1200, 0.08, 40)),
+        "swish": snd(swish),
+        "bell": snd(np.concatenate([bell, bell]), 0.7),
+        "win": snd(np.concatenate([tone(f, 0.12, 6) for f in (523, 659, 784, 1047)])),
+    }
+    return sounds | {
         "slice": snd(swish * 0.8 + splat * 0.6),
         "boom": snd(boom, 0.9),
         "beep": snd(tone(660, 0.15, 12)),
@@ -713,13 +768,9 @@ class Renderer:
         self.no_signal = False
         self.camera_status = ""
 
-    def popup_font(self, size, grow):
-        h = self.rect.h
-        base = {"mid": h / 14, "big": h / 10, "huge": h / 5}[size]
-        return theme.font(int(base * (0.5 + 0.5 * grow)))
-
-    def draw(self, screen, game, tracker, frame, fresh, people, fps, rect, view, overlay=None):
-        """overlay: a setup screen (Wi-Fi etc.) drawn in the play area instead of the game."""
+    def prepare(self, screen, tracker, frame, fresh, rect, view):
+        """Shared by every game: the dojo backdrop, the alpha layer, the camera picture (cam_surf,
+        sized to the play area) and the camera status. Leaves the play area empty."""
         self.rect = rect
         key = (screen.get_size(), tuple(rect))
         if key != self.backdrop_key:
@@ -739,6 +790,15 @@ class Renderer:
         if frame is not None and (fresh or self.cam_surf is None):
             rgb = cv2.cvtColor(cv2.resize(view.crop(frame), rect.size), cv2.COLOR_BGR2RGB)
             self.cam_surf = pygame.image.frombuffer(rgb.tobytes(), rect.size, "RGB")
+
+    def popup_font(self, size, grow):
+        h = self.rect.h
+        base = {"mid": h / 14, "big": h / 10, "huge": h / 5}[size]
+        return theme.font(int(base * (0.5 + 0.5 * grow)))
+
+    def draw(self, screen, game, tracker, frame, fresh, people, fps, rect, view, overlay=None):
+        """overlay: a setup screen (Wi-Fi etc.) drawn in the play area instead of the game."""
+        self.prepare(screen, tracker, frame, fresh, rect, view)
         if self.cam_surf is not None:
             screen.blit(self.cam_surf, rect)
 
@@ -899,6 +959,29 @@ class Renderer:
             pygame.draw.polygon(screen, color, [(hx - 2 * r, cy - r * 0.2), (hx + 2 * r, cy - r * 0.2),
                                                 (hx, cy + r * 1.9)])
 
+    def grid_icon(self, cx, cy, size, color=theme.CREAM):
+        """Four small squares: 'all games'."""
+        q = size * 0.38
+        for dx in (-1, 1):
+            for dy in (-1, 1):
+                r = pygame.Rect(0, 0, q, q)
+                r.center = (cx + dx * q * 0.62, cy + dy * q * 0.62)
+                pygame.draw.rect(self.layer, (*color, 255), r, border_radius=max(1, int(q * 0.2)))
+
+    def glove_icon(self, cx, cy, size, color):
+        """A boxing glove: round fist, thumb, cuff."""
+        fist = pygame.Rect(0, 0, size * 0.8, size * 0.72)
+        fist.center = (cx, cy - size * 0.08)
+        pygame.draw.ellipse(self.layer, (*color, 255), fist)
+        pygame.draw.ellipse(self.layer, (*[min(255, c + 70) for c in color], 255),
+                            pygame.Rect(fist.x + fist.w * 0.18, fist.y + fist.h * 0.12, fist.w * 0.35, fist.h * 0.28))
+        thumb = pygame.Rect(0, 0, size * 0.28, size * 0.42)
+        thumb.center = (cx - size * 0.38, cy + size * 0.02)
+        pygame.draw.ellipse(self.layer, (*[int(c * 0.85) for c in color], 255), thumb)
+        cuff = pygame.Rect(0, 0, size * 0.62, size * 0.24)
+        cuff.midtop = (cx, fist.bottom - size * 0.08)
+        pygame.draw.rect(self.layer, (245, 245, 240, 255), cuff, border_radius=int(size * 0.06))
+
     def wifi_icon(self, cx, cy, size, color=theme.CREAM):
         base = (cx, cy + size * 0.4)
         for k in (0.35, 0.65, 0.95):
@@ -992,13 +1075,45 @@ class Renderer:
                             [f"{self.cfg['survival'].get('lives', 1)} lives - avoid bombs!",
                              "last one standing wins" if versus else f"best {game.best['survival']}"],
                             art(None, "bomb"))
+            self.choice_box(screen, rect, game, "games", zones["games"], to_layer, scale, "GAMES",
+                            icon=self.grid_icon, compact=True)
+            self.choice_box(screen, rect, game, "settings", zones["settings"], to_layer, scale, "WI-FI",
+                            icon=self.wifi_icon, compact=True)
+            holding = any(game.hover[z] > 0 for z in zones)
+            self.message(screen, rect, "Keep holding..." if holding else "Hold your hand on a game", 0.55, 0.045,
+                         theme.GOLD if holding else theme.CREAM)
+            self.message(screen, rect, "Remote:  Left/Right = mode  |  Up = games  |  Down = Wi-Fi",
+                         0.63, 0.026, (200, 190, 170))
+        elif st == "games":
+            zones = game.game_zones()
+            versus = game.n_players == 2
+
+            def people(cx, cy, size):
+                cy += size * 0.15
+                if versus:
+                    self.person_icon(cx - size * 0.35, cy, size, game.players[0].glow)
+                    self.person_icon(cx + size * 0.35, cy, size, game.players[-1].glow)
+                else:
+                    self.person_icon(cx, cy, size * 1.1, game.players[0].glow)
+
+            def fruit_icon(cx, cy, size):
+                surf = self.art.get(fr.TYPES[9], max(8, int(size * 0.5)), "whole")
+                self.layer.blit(surf, surf.get_rect(center=(cx, cy)))
+
+            def glove_icon(cx, cy, size):
+                self.glove_icon(cx, cy, size, (220, 40, 40))
+
+            self.choice_box(screen, rect, game, "fruit", zones["fruit"], to_layer, scale, "FRUIT SLICE",
+                            ["slice the fruit!", "1 or 2 players"], fruit_icon)
+            self.choice_box(screen, rect, game, "boxing", zones["boxing"], to_layer, scale, "BOXING",
+                            ["beat the boxer!", "1 player" + (" (BLUE)" if versus else "")], glove_icon)
             self.choice_box(screen, rect, game, "players", zones["players"], to_layer, scale,
                             f"{game.n_players} PLAYER{'S' if versus else ''}", icon=people, compact=True,
                             icon_width=1.9 if versus else 1.2)
             self.choice_box(screen, rect, game, "settings", zones["settings"], to_layer, scale, "WI-FI",
                             icon=self.wifi_icon, compact=True)
             holding = any(game.hover[z] > 0 for z in zones)
-            self.message(screen, rect, "Keep holding..." if holding else "Hold your hand on a game", 0.55, 0.045,
+            self.message(screen, rect, "Keep holding..." if holding else "Pick a game", 0.55, 0.045,
                          theme.GOLD if holding else theme.CREAM)
             self.message(screen, rect, "Remote:  Left/Right = game  |  Up = players  |  Down = Wi-Fi",
                          0.63, 0.026, (200, 190, 170))
@@ -1081,7 +1196,7 @@ class Renderer:
                 r = theme.text(screen, theme.font(left.w * 0.24), line, theme.GOLD, outline=3,
                                midtop=(left.centerx, y))
                 y = r.bottom - 4
-            pre_game = game.state in ("calibrate", "players", "menu")
+            pre_game = game.state in ("calibrate", "players", "games", "menu")
             if pre_game:
                 f = theme.font(left.w * 0.09, name="arial")
                 theme.text(screen, f, "BEST SCORES", theme.CREAM, midtop=(left.centerx, left.y + left.h * 0.5))
@@ -1126,7 +1241,7 @@ class Renderer:
             if not versus and game.mode == "classic" and game.state in ("play", "over"):
                 theme.text(screen, theme.font(right.w * 0.08, name="arial"), f"missed {game.missed}",
                            midtop=(right.centerx, right.y + right.h * 0.45))
-            if game.state in ("calibrate", "players", "menu") and not hint:
+            if game.state in ("calibrate", "players", "games", "menu") and not hint:
                 theme.text(screen, theme.font(right.w * 0.11), "HOW TO PLAY", theme.GOLD, outline=2,
                            midtop=(right.centerx, right.y + 30))
                 steps = ["Stand where you can see your whole body",
@@ -1143,7 +1258,7 @@ class Renderer:
                         y += f.get_height()
                     y += f.get_height() * 0.5
             else:
-                hint = hint or {"calibrate": "Stand in the middle", "players": "How many?",
+                hint = hint or {"calibrate": "Stand in the middle", "players": "How many?", "games": "Pick a game",
                                 "menu": "Pick a game", "ready": "Hands up!",
                                 "countdown": "Get ready...", "play": "Slice!", "boom": "Ouch!",
                                 "over": "Well done!"}[game.state]
@@ -1161,7 +1276,7 @@ class Renderer:
                                bottomleft=(right.x + 14, right.bottom - 14 - (len(lines) - 1 - i) * f.get_height()))
 
 
-# ---------------------------------------------------------------- main loop
+# ---------------------------------------------------------------- config
 
 def merge(base, override):
     for key, value in override.items():
@@ -1185,124 +1300,8 @@ def load_config():
     return cfg
 
 
-def keep_display_awake():
-    """Stop Windows blanking the TV or sleeping while the game runs (no system setting changed)."""
-    if sys.platform == "win32":
-        import ctypes
-        ES_CONTINUOUS, ES_SYSTEM_REQUIRED, ES_DISPLAY_REQUIRED = 0x80000000, 0x1, 0x2
-        ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED)
-
-
-def main():
-    cfg = load_config()
-    g = cfg["game"]
-
-    pygame.mixer.pre_init(22050, -16, 2, 256)  # small buffer = less sound delay
-    pygame.init()
-    pygame.display.set_caption("Fruit Slice (prototype)")
-    windowed = (g["window_width"], g["window_height"])
-    fullscreen = g["fullscreen"]
-    keep_display_awake()
-
-    def set_mode():
-        # Full screen draws at the screen's own size. On the console that's 720p: run_game.sh sets
-        # the TV to 1280x720, because drawing 4K on the CPU starves pose tracking.
-        pygame.mouse.set_visible(not fullscreen)
-        return pygame.display.set_mode((0, 0) if fullscreen else windowed,
-                                       pygame.FULLSCREEN if fullscreen else 0)
-
-    screen = set_mode()
-    tracker = pl.PoseTracker(cfg)
-    game = Game(cfg, load_scores())
-    renderer = Renderer(cfg)
-    net = Network(cfg["network"]["backend"])
-    setup = Setup(cfg, net)
-    if net.available and cfg["network"]["show_at_startup"]:
-        setup.open()
-    sounds = make_sounds()
-    clock = pygame.time.Clock()
-    last_seq = 0
-    perf_log = HERE.parent / "logs" / "perf.log"  # read remotely to check the box keeps up
-    next_perf = time.perf_counter() + 30
-
-    try:
-        running = True
-        stop_console = False
-        while running:
-            events = pygame.event.get()
-            for event in events:
-                if event.type == pygame.QUIT:
-                    running = False
-                elif event.type != pygame.KEYDOWN:
-                    continue
-                # Quit is Ctrl+Q only: a remote's Back button sends Esc, which must not end the console.
-                elif event.key == pygame.K_q and event.mod & pygame.KMOD_CTRL:
-                    running, stop_console = False, True
-                elif setup.active:
-                    continue  # the setup screens use the keys themselves (typing a password)
-                elif event.key == pygame.K_r:
-                    tracker.cycle_rotation()
-                elif event.key == pygame.K_s:
-                    renderer.show_skeleton = not renderer.show_skeleton
-                elif event.key == pygame.K_d:
-                    renderer.show_debug = not renderer.show_debug
-                elif event.key == pygame.K_f:
-                    fullscreen = not fullscreen
-                    screen = set_mode()
-                else:
-                    game.press(event.key)
-
-            seq, frame, people, t_pose = tracker.latest()
-            fresh = seq != last_seq
-            last_seq = seq
-            rect, view = layout(frame, screen, cfg)
-            game.rotation_locked = tracker.rotation_locked
-            tracker.want_people = game.want_people
-            tracker.recheck_rotation = game.state == "calibrate"  # follow the phone if it was turned
-            now = time.perf_counter()
-            if setup.active:
-                dt = game.track(people, fresh, t_pose, now, view)
-                hands_px = [(int(rect.x + u * rect.w), int(rect.y + v * rect.h)) for u, v in game.pointers()]
-                setup.update(rect, hands_px, events, dt)
-            else:
-                game.update(people, fresh, t_pose, now, view)
-                if game.just_calibrated:  # the picture is right: start this way up next time
-                    game.just_calibrated = False
-                    tracker.remember_rotation()
-                if game.want_settings:
-                    game.want_settings = False
-                    if net.available:
-                        setup.open()
-            for name in game.sounds:
-                if name in sounds:
-                    sounds[name].play()
-            game.sounds.clear()
-
-            # Full screen hides the mouse pointer during play; show it on the setup screens,
-            # where a plugged-in mouse is one of the ways to press buttons.
-            if fullscreen and pygame.mouse.get_visible() != setup.active:
-                pygame.mouse.set_visible(setup.active)
-            renderer.draw(screen, game, tracker, frame, fresh, people, clock.get_fps(), rect, view,
-                          overlay=setup if setup.active else None)
-            pygame.display.flip()
-            if now >= next_perf:
-                next_perf = now + 30
-                try:
-                    perf_log.parent.mkdir(exist_ok=True)
-                    with open(perf_log, "a") as f:
-                        f.write(f"{time.strftime('%Y-%m-%dT%H:%M:%S')} fps {clock.get_fps():.1f} "
-                                f"pose_ms {tracker.pose_ms:.1f} people {len(game.present)} state {game.state} "
-                                f"players {len(game.participants)}\n")
-                except OSError:
-                    pass
-            clock.tick(60)
-    finally:
-        tracker.close()
-        pygame.quit()
-    # Any other ending (an update stopping the game, a crash, a stop signal that SDL turns into a
-    # normal quit) returns 0 and the console launcher simply starts the game again.
-    return STOP_CONSOLE if stop_console else 0
-
-
 if __name__ == "__main__":
+    # The main loop lives in console.py now (it also runs the other games); this keeps the old
+    # "python prototype/fruit_slice.py" command working.
+    from console import main
     sys.exit(main())

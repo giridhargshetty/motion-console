@@ -13,5 +13,5 @@ if [ -n "$out" ]; then
     xrandr --output "$out" --mode 1280x720 --rate 60 2>/dev/null \
         || xrandr --output "$out" --mode 1920x1080 --rate 60 2>/dev/null || true
 fi
-"$REPO_DIR/.venv/bin/python" "$REPO_DIR/prototype/fruit_slice.py" 2>> "$REPO_DIR/logs/game_errors.log"
+"$REPO_DIR/.venv/bin/python" "$REPO_DIR/prototype/console.py" 2>> "$REPO_DIR/logs/game_errors.log"
 echo $? > "$REPO_DIR/logs/.game_exit"

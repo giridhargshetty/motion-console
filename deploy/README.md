@@ -60,7 +60,7 @@ setup). The TV's own remote can't reach a PC: that needs HDMI-CEC, which PCs alm
 ### Updating
 
 Commit and push on the laptop; then either restart the box, or over SSH:
-`cd ~/motion-console && git pull && pkill -f fruit_slice.py` (the console loop restarts the game).
+`bash ~/motion-console/deploy/linux/update.sh` (pulls, then restarts the game; no password or reboot).
 
 ## Windows (alternative)
 
@@ -123,5 +123,5 @@ Machine-only settings stay in `prototype\config.local.toml`, which git ignores, 
 | "Connecting... (phone not found over USB)" | Cable plugged in? USB debugging allowed for this PC? Run `adb devices`: the phone should say `device`, not `unauthorized`. |
 | "Connecting... (waiting for the DroidCam app)" | Phone unlocked? Open the DroidCam app by hand once. Is the DroidCam PC client running somewhere? It steals the connection. |
 | "Connecting... (adb not found)" | Re-run setup, or `winget install -e --id Google.PlatformTools`, or set `adb` in `config.local.toml`. |
-| Game doesn't start at all | `logs\console.log`, `logs\game_errors.log`; run `.venv\Scripts\python prototype\fruit_slice.py` by hand to see errors. |
+| Game doesn't start at all | `logs\console.log`, `logs\game_errors.log`; run `.venv\Scripts\python prototype\console.py` by hand to see errors. |
 | Update not arriving | `logs\console.log` "update" lines; run `git pull` in the folder to see the error (sign-in, network). |

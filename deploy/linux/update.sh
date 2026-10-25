@@ -11,7 +11,7 @@ if [ "$(sha256sum requirements.txt)" != "$(git show HEAD@{1}:requirements.txt 2>
     .venv/bin/pip install -q -r requirements.txt
 fi
 if pgrep -f "deploy/linux/[c]onsole.sh" >/dev/null; then
-    pkill -f "[.]venv/bin/python $REPO_DIR/prototype/fruit_slice.py" || true
+    pkill -f "[.]venv/bin/python $REPO_DIR/prototype/(console|fruit_slice)[.]py" || true
     echo "game restarting with $(git log --oneline -1)"
 else
     pkill -HUP -t tty1 -u "$(id -un)" || true  # hang up the tty1 shell: auto-login starts the console again
