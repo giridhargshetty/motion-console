@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Kiosk launcher (Linux). Auto-login on tty1 runs this (set up by setup.sh):
 #   1. pulls the latest version from GitHub (skipped quietly when offline)
-#   2. runs the game full screen inside cage, restarting it if it crashes
+#   2. runs the game full screen on a bare X server (xinit, no desktop), restarting it if it crashes
+#      (pygame's SDL has no native Wayland support, and cage's Xwayland crashed under it)
 # Ctrl+Q in the game stops the loop and leaves a shell on tty1 for maintenance.
 # Logs: logs/console.log and logs/game_errors.log
 
@@ -35,8 +36,9 @@ adb start-server >/dev/null 2>&1 || true
 # 2. Game loop. Exit code 0 means Ctrl+Q: stop and hand tty1 over to a shell.
 while true; do
     log "starting game"
-    cage -s -- "$REPO_DIR/.venv/bin/python" "$REPO_DIR/prototype/fruit_slice.py" 2>> "$LOG_DIR/game_errors.log"
-    code=$?
+    rm -f "$LOG_DIR/.game_exit"
+    xinit "$REPO_DIR/deploy/linux/run_game.sh" -- :0 vt1 -keeptty -nolisten tcp >> "$LOG_DIR/xorg.log" 2>&1
+    code="$(cat "$LOG_DIR/.game_exit" 2>/dev/null || echo 1)"
     log "game exited with code $code"
     [ "$code" -eq 0 ] && break
     sleep 3

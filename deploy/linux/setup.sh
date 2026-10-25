@@ -3,7 +3,7 @@
 # Run on the mini PC, from inside the cloned repo, as the user who will own the console:
 #     bash deploy/linux/setup.sh
 # Installs packages, builds the Python environment, downloads the pose models, and makes
-# the box boot straight into the game: auto-login on tty1 -> deploy/linux/console.sh -> cage.
+# the box boot straight into the game: auto-login on tty1 -> deploy/linux/console.sh -> xinit (bare X) -> game.
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -12,11 +12,13 @@ step() { printf '\n==> %s\n' "$*"; }
 
 step "System packages"
 sudo apt-get update
-# cage: minimal full-screen Wayland compositor (one app, no desktop); xwayland lets SDL use X11.
+# xserver-xorg-core + xinit: a bare X server running only the game (no desktop). pygame's SDL has
+#   no native Wayland support, and the cage kiosk compositor's Xwayland crashed under it.
 # android-sdk-platform-tools-common: udev rules so adb can reach the phone without root.
 # network-manager: lets the game's Wi-Fi screen scan and join networks (nmcli).
 sudo apt-get install -y git curl python3-venv python3-pip adb android-sdk-platform-tools-common \
-    cage xwayland libgl1 libglib2.0-0 fonts-dejavu-core alsa-utils network-manager
+    xserver-xorg-core xserver-xorg-input-libinput xinit x11-xserver-utils \
+    libgl1 libglib2.0-0 fonts-dejavu-core alsa-utils network-manager
 getent group netdev >/dev/null || sudo groupadd netdev
 for group in plugdev video render input audio netdev; do
     getent group "$group" >/dev/null && sudo usermod -aG "$group" "$USER_NAME"
@@ -66,7 +68,7 @@ if [ ! -f prototype/config.local.toml ]; then
     printf '# Settings for this machine only (not in git). Overrides prototype/config.toml.\n[game]\nfullscreen = true\n' \
         > prototype/config.local.toml
 fi
-chmod +x deploy/linux/console.sh
+chmod +x deploy/linux/console.sh deploy/linux/run_game.sh
 
 step "Auto-login on tty1"
 sudo mkdir -p /etc/systemd/system/getty@tty1.service.d

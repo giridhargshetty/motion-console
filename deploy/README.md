@@ -10,7 +10,7 @@ further down still works if you ever need it.
 
 ```
 laptop:  edit -> test -> git commit -> git push  ──►  GitHub (private repo: giridhargshetty/motion-console)
-mini PC: power on -> auto-login tty1 -> console.sh: git pull -> cage (full screen) -> game
+mini PC: power on -> auto-login tty1 -> console.sh: git pull -> xinit (bare X, full screen) -> game
                                                            game: adb -> DroidCam phone app -> pictures
 ```
 
@@ -50,7 +50,7 @@ setup). The TV's own remote can't reach a PC: that needs HDMI-CEC, which PCs alm
    as a **deploy key** (read-only, works only for this repo).
 2. `git clone git@github.com:giridhargshetty/motion-console.git ~/motion-console`
 3. `bash ~/motion-console/deploy/linux/setup.sh` installs packages (Python 3.12, adb + phone udev rules,
-   cage), builds `.venv`, downloads the pose models, writes `prototype/config.local.toml`
+   a bare X server), builds `.venv`, downloads the pose models, writes `prototype/config.local.toml`
    (fullscreen), sets auto-login on tty1 to start `deploy/linux/console.sh`, and speeds up boot.
 4. Phone: plug it in, tap **Allow** on "Allow USB debugging?" (tick "Always allow"), and turn on
    Developer options -> **Stay awake**.

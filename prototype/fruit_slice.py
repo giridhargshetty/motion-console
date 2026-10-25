@@ -917,6 +917,10 @@ def main():
                     sounds[name].play()
             game.sounds.clear()
 
+            # Full screen hides the mouse pointer during play; show it on the setup screens,
+            # where a plugged-in mouse is one of the ways to press buttons.
+            if fullscreen and pygame.mouse.get_visible() != setup.active:
+                pygame.mouse.set_visible(setup.active)
             renderer.draw(screen, game, tracker, frame, fresh, kp, clock.get_fps(), rect, view,
                           overlay=setup if setup.active else None)
             pygame.display.flip()
