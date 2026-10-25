@@ -136,18 +136,19 @@ class Player:
 
 class Game:
     """All game state and rules; no drawing. States:
-    calibrate -> menu -> ready -> countdown -> play -> (boom) -> over -> menu ...
-    One or two players: everyone in view when the round starts takes part."""
+    calibrate -> players (how many?) -> menu -> ready -> countdown -> play -> (boom) -> over -> menu ...
+    1 player: BLUE, and the tracker looks for one person only. 2 players: BLUE (left) vs ORANGE (right)."""
 
     def __init__(self, cfg, scores):
         self.cfg = cfg
         self.g = cfg["game"]
         self.players = [Player(cfg, 0), Player(cfg, 1)][:max(1, cfg["pose"].get("max_players", 1))]
         self.participants = [0]  # slots taking part in the current / last round
+        self.n_players = 1       # chosen on the "How many players?" screen
         self.best = scores
         self.state, self.state_t, self.hold = "calibrate", 0.0, 0.0
         self.mode = None
-        self.hover = {"classic": 0.0, "survival": 0.0, "settings": 0.0}
+        self.hover = {"classic": 0.0, "survival": 0.0, "players": 0.0, "settings": 0.0, "one": 0.0, "two": 0.0}
         self.want_settings = False
         self.calib_ok, self.calib_msg = False, ""
         self.t = self.last_t = 0.0
@@ -257,14 +258,28 @@ class Game:
 
     def menu_zones(self):
         a = self.aspect
-        # Settings sits in a strip above head height: grown-ups reach it, resting arms never do.
+        # The strip above head height (change players, Wi-Fi): grown-ups reach it, resting arms never do.
         return {"classic": (0.05 * a, 0.14, 0.47 * a, 0.46),
                 "survival": (0.53 * a, 0.14, 0.95 * a, 0.46),
-                "settings": (0.3 * a, 0.015, 0.7 * a, 0.09)}
+                "players": (0.05 * a, 0.015, 0.47 * a, 0.09),
+                "settings": (0.53 * a, 0.015, 0.95 * a, 0.09)}
+
+    def player_zones(self):
+        a = self.aspect
+        return {"one": (0.05 * a, 0.14, 0.47 * a, 0.46), "two": (0.53 * a, 0.14, 0.95 * a, 0.46)}
 
     def hover_needed(self, zone):
         m = self.cfg["menu"]
-        return m["settings_hover_seconds"] if zone == "settings" else m["hover_seconds"]
+        return m["settings_hover_seconds"] if zone in ("players", "settings") else m["hover_seconds"]
+
+    @property
+    def want_people(self):
+        """How many people the tracker should look for: both while choosing, then the chosen number."""
+        return 2 if self.state in ("calibrate", "players") else self.n_players
+
+    @property
+    def solo(self):
+        return self.n_players == 1 and self.state not in ("calibrate", "players")
 
     # ---- update ----
 
@@ -301,7 +316,10 @@ class Game:
         far = self.cfg["calibrate"]["min_torso"] * 0.75
         people = [kp for kp in people if (self.torso_length(kp) or far) >= far][:len(self.players)]
         recent = [p.last_x if t - p.last_seen <= players.FORGET_SECONDS else None for p in self.players]
-        slots = players.assign(recent, [players.body_x(kp) for kp in people])
+        if self.solo:  # one player: whoever is in view is BLUE
+            people, slots = people[:1], [0] * min(1, len(people))
+        else:
+            slots = players.assign(recent, [players.body_x(kp) for kp in people])
         found = dict(zip(slots, people))
         for p in self.players:
             p.kp = found.get(p.idx)
@@ -316,13 +334,18 @@ class Game:
 
     def press(self, key):
         """Remote / keyboard shortcuts so the menus also work with a D-pad remote."""
-        if self.state == "menu":
-            choice = {pygame.K_LEFT: "classic", pygame.K_RIGHT: "survival", pygame.K_DOWN: "settings"}.get(key)
+        if self.state == "players":
+            n = {pygame.K_LEFT: 1, pygame.K_RIGHT: 2}.get(key)
+            if n:
+                self.choose_players(n)
+        elif self.state == "menu":
+            choice = {pygame.K_LEFT: "classic", pygame.K_RIGHT: "survival",
+                      pygame.K_UP: "players", pygame.K_DOWN: "settings"}.get(key)
             if choice:
                 self.select(choice)
         elif self.state in ("ready", "over") and key in (pygame.K_RETURN, pygame.K_KP_ENTER):
             if self.state == "ready":
-                self.participants = [p.idx for p in self.present] or [0]
+                self.participants = list(range(self.n_players))
                 self.goto("countdown")
                 self.sounds.append("beep")
             elif self.t - self.state_t >= OVER_COOLDOWN:
@@ -351,8 +374,25 @@ class Game:
             self.calib_ok, self.calib_msg = self.calib_check(present[0].kp if present else None)
         self.hold = self.hold + dt if self.calib_ok else 0.0
         if self.hold >= self.cfg["calibrate"]["hold_seconds"]:
-            self.goto("menu")
+            self.goto("players")
             self.sounds.append("ok")
+
+    def _players(self, fresh, dt, gone):
+        if gone > self.cfg["calibrate"]["lost_seconds"]:
+            return self.goto("calibrate")
+        if len(self.players) < 2:  # max_players = 1 in the config: nothing to choose
+            return self.choose_players(1)
+        for zone, (x0, y0, x1, y1) in self.player_zones().items():
+            inside = any(h.pos and x0 <= h.pos[0] <= x1 and y0 <= h.pos[1] <= y1 for h in self.hands)
+            self.hover[zone] = self.hover[zone] + dt if inside else max(0.0, self.hover[zone] - 2 * dt)
+            if self.hover[zone] >= self.hover_needed(zone):
+                return self.choose_players(1 if zone == "one" else 2)
+
+    def choose_players(self, n):
+        self.n_players = n
+        self.hover = dict.fromkeys(self.hover, 0.0)
+        self.sounds.append("select")
+        self.goto("menu")
 
     def _menu(self, fresh, dt, gone):
         if gone > self.cfg["calibrate"]["lost_seconds"]:
@@ -368,6 +408,8 @@ class Game:
         self.sounds.append("select")
         if choice == "settings":
             self.want_settings = True  # the main loop opens the setup screens
+        elif choice == "players":
+            self.goto("players")
         else:
             self.mode = choice
             self.goto("ready")
@@ -375,11 +417,11 @@ class Game:
     def _ready(self, fresh, dt, gone):
         if gone > self.cfg["calibrate"]["lost_seconds"]:
             return self.goto("calibrate")
-        present = self.present  # everyone in view must raise both hands; they all play
-        all_up = bool(present) and all(self.hands_up(p.kp) for p in present)
+        needed = self.players[:self.n_players]  # BLUE, or BLUE and ORANGE
+        all_up = all(p.kp is not None and self.hands_up(p.kp) for p in needed)
         self.hold = self.hold + dt if all_up else 0.0
         if self.hold >= self.g["hands_up_seconds"]:
-            self.participants = [p.idx for p in present]
+            self.participants = [p.idx for p in needed]
             self.goto("countdown")
             self.sounds.append("beep")
 
@@ -406,7 +448,10 @@ class Game:
         self.fx.popup(self.aspect / 2, 0.45, "GO!", (120, 255, 140), "huge", 0.7)
 
     def _play(self, fresh, dt, gone):
-        missing = [p for p in self.active if p.kp is None]
+        # Tracking drops a person for a frame now and then (more often with two): only pause
+        # when a player has really been gone for a moment.
+        grace = self.g.get("pause_after_seconds", 1.0)
+        missing = [p for p in self.active if self.t - p.last_seen > grace]
         self.paused = bool(missing)
         if self.paused:  # stop the clock while a player is out of view
             self.round_end += dt
@@ -784,6 +829,25 @@ class Renderer:
                 pygame.draw.circle(self.layer, (*(glow if two else (255, 255, 255)), 220),
                                    to_layer(*hand.pos), int(scale * 0.028), 4 if two else 3)
 
+    def zone_box(self, game, zone, area, to_layer, scale):
+        """A hover box like the menu's, filling up while a hand is held on it."""
+        x0, y0, x1, y1 = area
+        box = pygame.Rect(to_layer(x0, y0), (int((x1 - x0) * scale), int((y1 - y0) * scale)))
+        frac = game.hover[zone] / game.hover_needed(zone)
+        pygame.draw.rect(self.layer, (20, 10, 5, 190), box, border_radius=16)
+        fill = box.copy()
+        fill.h = int(box.h * min(1.0, frac))
+        fill.bottom = box.bottom
+        pygame.draw.rect(self.layer, (240, 195, 80, 150), fill, border_radius=16)
+        pygame.draw.rect(self.layer, (240, 195, 80, 255), box, 3, border_radius=16)
+        return box
+
+    def person_icon(self, cx, cy, size, color):
+        pygame.draw.circle(self.layer, (*color, 255), (cx, cy - size * 0.55), size * 0.28)
+        body = pygame.Rect(0, 0, size * 0.7, size * 0.75)
+        body.midtop = (cx, cy - size * 0.2)
+        pygame.draw.rect(self.layer, (*color, 255), body, border_radius=int(size * 0.3))
+
     def ring(self, center, radius, frac, color=(255, 215, 80), width=8):
         box = pygame.Rect(0, 0, 2 * radius, 2 * radius)
         box.center = center
@@ -817,6 +881,18 @@ class Renderer:
                               game.hold / self.cfg["calibrate"]["hold_seconds"], (120, 255, 140))
             self.message(screen, rect, "Stand side by side" if two else "Stand in the middle", 0.04, 0.06, theme.GOLD)
             self.message(screen, rect, game.calib_msg, 0.84, 0.05)
+        elif st == "players":
+            for zone, (x0, y0, x1, y1) in game.player_zones().items():
+                box = self.zone_box(game, zone, (x0, y0, x1, y1), to_layer, scale)
+                two = zone == "two"
+                icons = [(0.38, game.players[0].glow), (0.62, game.players[-1].glow)] if two else [(0.5, game.players[0].glow)]
+                for fx, color in icons:
+                    self.person_icon(box.x + box.w * fx, box.y + box.h * 0.4, box.h * 0.22, color)
+                self.later.append(functools.partial(
+                    theme.text, screen, theme.font(scale * 0.045), "2 PLAYERS" if two else "1 PLAYER", theme.GOLD,
+                    center=(rect.x + box.centerx, rect.y + box.y + int(box.h * 0.8))))
+            self.message(screen, rect, "How many players?", 0.04, 0.06, theme.GOLD)
+            self.message(screen, rect, "Hold your hand on one", 0.6, 0.045)
         elif st == "menu":
             for mode, (x0, y0, x1, y1) in game.menu_zones().items():
                 box = pygame.Rect(to_layer(x0, y0), (int((x1 - x0) * scale), int((y1 - y0) * scale)))
@@ -828,9 +904,10 @@ class Renderer:
                 pygame.draw.rect(self.layer, (240, 195, 80, 150), fill, border_radius=16)
                 pygame.draw.rect(self.layer, (240, 195, 80, 255), box, 3, border_radius=16)
                 cx = rect.x + box.centerx
-                if mode == "settings":
+                if mode in ("players", "settings"):
+                    label = f"PLAYERS: {game.n_players}" if mode == "players" else "WI-FI / SETTINGS"
                     self.later.append(functools.partial(
-                        theme.text, screen, theme.font(scale * 0.03), "WI-FI / SETTINGS", theme.CREAM,
+                        theme.text, screen, theme.font(scale * 0.028), label, theme.CREAM,
                         center=(cx, rect.y + box.centery)))
                     continue
                 icon = (self.art.get(fr.TYPES[9], int(scale * 0.06), "whole") if mode == "classic"
@@ -846,9 +923,12 @@ class Renderer:
             self.message(screen, rect, "Hold your hand on a game to pick it", 0.68, 0.045)
         elif st == "ready":
             self.message(screen, rect, game.mode.upper(), 0.12, 0.08, theme.GOLD)
-            two = len(game.present) > 1
-            self.message(screen, rect, "Both players: raise both hands to start!" if two
-                         else "Raise both hands above your head to start!", 0.75, 0.05)
+            two = game.n_players == 2
+            if two and len(game.present) < 2:
+                msg = "Waiting for a second player..."
+            else:
+                msg = "Both players: raise both hands to start!" if two else "Raise both hands above your head to start!"
+            self.message(screen, rect, msg, 0.75, 0.05)
             for p in game.present:
                 for hand in p.hands:
                     if hand.pos is not None:
@@ -950,7 +1030,8 @@ class Renderer:
             if not versus and game.mode == "classic" and game.state in ("play", "over"):
                 theme.text(screen, theme.font(right.w * 0.08, name="arial"), f"missed {game.missed}",
                            midtop=(right.centerx, right.y + right.h * 0.45))
-            hint = hint or {"calibrate": "Stand in the middle", "menu": "Pick a game", "ready": "Hands up!",
+            hint = hint or {"calibrate": "Stand in the middle", "players": "How many?",
+                            "menu": "Pick a game", "ready": "Hands up!",
                             "countdown": "Get ready...", "play": "Slice!", "boom": "Ouch!",
                             "over": "Well done!"}[game.state]
             theme.text(screen, theme.font(right.w * 0.11), hint, theme.CREAM, midtop=(right.centerx, right.y + right.h * 0.58))
@@ -1010,9 +1091,10 @@ def main():
     keep_display_awake()
 
     def set_mode():
+        # Always draw at window size (720p); SCALED lets the GPU scale it to a full screen.
+        # Drawing at the screen's own size costs a lot of CPU on a 4K TV and starves pose tracking.
         pygame.mouse.set_visible(not fullscreen)
-        return pygame.display.set_mode((0, 0) if fullscreen else windowed,
-                                       pygame.FULLSCREEN if fullscreen else 0)
+        return pygame.display.set_mode(windowed, pygame.SCALED | (pygame.FULLSCREEN if fullscreen else 0))
 
     screen = set_mode()
     tracker = pl.PoseTracker(cfg)
@@ -1051,7 +1133,8 @@ def main():
                     renderer.show_debug = not renderer.show_debug
                 elif event.key == pygame.K_f:
                     fullscreen = not fullscreen
-                    screen = set_mode()
+                    pygame.display.toggle_fullscreen()  # same 720p drawing size, so no new window
+                    pygame.mouse.set_visible(not fullscreen)
                 else:
                     game.press(event.key)
 
@@ -1060,6 +1143,7 @@ def main():
             last_seq = seq
             rect, view = layout(frame, screen, cfg)
             game.rotation_locked = tracker.rotation_locked
+            tracker.want_people = game.want_people
             now = time.perf_counter()
             if setup.active:
                 dt = game.track(people, fresh, t_pose, now, view)

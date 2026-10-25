@@ -311,8 +311,11 @@ class PoseTracker:
         self.mirror = cam["mirror"]
         self.crop_bars = cam["crop_bars"]
         self.camera = open_camera(cam)
-        self.landmarker = make_landmarker(cfg["pose"]["model"], vision.RunningMode.VIDEO,
-                                          cfg["pose"].get("max_players", 1))
+        self.model = cfg["pose"]["model"]
+        self.max_people = cfg["pose"].get("max_players", 1)
+        self.want_people = self.max_people  # the game lowers this to 1 for 1-player rounds
+        self._people = self.want_people
+        self.landmarker = make_landmarker(self.model, vision.RunningMode.VIDEO, self._people)
         self._probe = make_landmarker("lite", vision.RunningMode.IMAGE) if self.auto_rotate else None
         self._votes = []
         self._box = None
@@ -351,6 +354,12 @@ class PoseTracker:
                     self._latest = (self._latest[0] + 1, None, [], time.perf_counter())
                 continue
             frame = self._crop(frame)
+            want = max(1, min(self.want_people, self.max_people))
+            if want != self._people:
+                # Looking for one person is faster than two, and passers-by can't join in.
+                self.landmarker.close()
+                self.landmarker = make_landmarker(self.model, vision.RunningMode.VIDEO, want)
+                self._people = want
             if not self.rotation_locked and n % 10 == 0:
                 self._probe_rotation(frame)
             n += 1

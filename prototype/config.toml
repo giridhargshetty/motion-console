@@ -52,7 +52,7 @@ show_at_startup = true   # network screen first; it goes on to the game by itsel
 auto_start_seconds = 10
 
 [game]
-window_width = 1280
+window_width = 1280     # drawing size; full screen scales this up on the GPU (cheap even on a 4K TV)
 window_height = 720
 play_aspect = 0.75     # play area width / height. The phone picture is 0.5625 (9:16); wider shows a
                        # band of it with the top/bottom trimmed. 0 = exactly the camera's shape
@@ -61,6 +61,8 @@ max_play_aspect = 1.33 # landscape camera (two players): show at most 4:3, trimm
                        # little, so the side panels with the two scores still fit
 fullscreen = false   # F toggles in game
 hands_up_seconds = 1.0
+pause_after_seconds = 1.0  # pause only when a player has been out of view this long (tracking
+                           # briefly loses people now and then, more often with two)
 countdown_seconds = 3
 fruit_radius = 0.065
 gravity = 1.6
