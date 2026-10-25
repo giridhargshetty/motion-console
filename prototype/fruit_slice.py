@@ -829,18 +829,52 @@ class Renderer:
                 pygame.draw.circle(self.layer, (*(glow if two else (255, 255, 255)), 220),
                                    to_layer(*hand.pos), int(scale * 0.028), 4 if two else 3)
 
-    def zone_box(self, game, zone, area, to_layer, scale):
-        """A hover box like the menu's, filling up while a hand is held on it."""
+    def choice_box(self, screen, rect, game, zone, area, to_layer, scale, title, lines=(), icon=None,
+                   compact=False, icon_width=1.2):
+        """A hand-pickable box. It lights up while a hand is on it, says HOLD, and fills from the
+        bottom until picked. compact: one line with a small icon (the top strip)."""
         x0, y0, x1, y1 = area
         box = pygame.Rect(to_layer(x0, y0), (int((x1 - x0) * scale), int((y1 - y0) * scale)))
-        frac = game.hover[zone] / game.hover_needed(zone)
-        pygame.draw.rect(self.layer, (20, 10, 5, 190), box, border_radius=16)
+        frac = min(1.0, game.hover[zone] / game.hover_needed(zone))
+        if frac > 0:  # glow around the box being held
+            pygame.draw.rect(self.layer, (255, 225, 120, 90), box.inflate(14, 14), border_radius=22)
+        pygame.draw.rect(self.layer, (28, 14, 8, 215), box, border_radius=16)
         fill = box.copy()
-        fill.h = int(box.h * min(1.0, frac))
+        fill.h = int(box.h * frac)
         fill.bottom = box.bottom
-        pygame.draw.rect(self.layer, (240, 195, 80, 150), fill, border_radius=16)
-        pygame.draw.rect(self.layer, (240, 195, 80, 255), box, 3, border_radius=16)
+        pygame.draw.rect(self.layer, (240, 195, 80, 130), fill, border_radius=16)
+        pygame.draw.rect(self.layer, (255, 240, 200, 255) if frac > 0 else (240, 195, 80, 255), box,
+                         5 if frac > 0 else 3, border_radius=16)
+
+        def put(text, font, color, **anchor):
+            self.later.append(functools.partial(theme.text, screen, font, text, color,
+                                                **{k: (rect.x + v[0], rect.y + v[1]) for k, v in anchor.items()}))
+
+        if compact:
+            f = theme.font(box.h * 0.42)
+            tw = f.size(title)[0]
+            size = box.h * 0.55
+            iw = size * icon_width  # room for the icon, then the text
+            left = box.centerx - (tw + iw) / 2
+            if icon:
+                icon(left + iw / 2 - size * 0.1, box.centery, size)
+            put(title, f, theme.CREAM, midleft=(int(left + iw), box.centery))
+            return box
+        if icon:
+            icon(box.centerx, box.y + box.h * 0.33, box.h * 0.36)
+        put(title, theme.font(scale * 0.045), theme.GOLD, center=(box.centerx, int(box.y + box.h * 0.66)))
+        for i, line in enumerate(lines):
+            put(line, theme.font(scale * 0.026, name="arial"), theme.CREAM,
+                center=(box.centerx, int(box.y + box.h * (0.8 + 0.1 * i))))
         return box
+
+    def wifi_icon(self, cx, cy, size, color=theme.CREAM):
+        base = (cx, cy + size * 0.4)
+        for k in (0.35, 0.65, 0.95):
+            r = pygame.Rect(0, 0, size * k * 1.6, size * k * 1.6)
+            r.center = base
+            pygame.draw.arc(self.layer, (*color, 255), r, math.pi * 0.25, math.pi * 0.75, max(2, int(size / 9)))
+        pygame.draw.circle(self.layer, (*color, 255), base, max(2, size / 10))
 
     def person_icon(self, cx, cy, size, color):
         pygame.draw.circle(self.layer, (*color, 255), (cx, cy - size * 0.55), size * 0.28)
@@ -882,45 +916,60 @@ class Renderer:
             self.message(screen, rect, "Stand side by side" if two else "Stand in the middle", 0.04, 0.06, theme.GOLD)
             self.message(screen, rect, game.calib_msg, 0.84, 0.05)
         elif st == "players":
-            for zone, (x0, y0, x1, y1) in game.player_zones().items():
-                box = self.zone_box(game, zone, (x0, y0, x1, y1), to_layer, scale)
-                two = zone == "two"
-                icons = [(0.38, game.players[0].glow), (0.62, game.players[-1].glow)] if two else [(0.5, game.players[0].glow)]
-                for fx, color in icons:
-                    self.person_icon(box.x + box.w * fx, box.y + box.h * 0.4, box.h * 0.22, color)
-                self.later.append(functools.partial(
-                    theme.text, screen, theme.font(scale * 0.045), "2 PLAYERS" if two else "1 PLAYER", theme.GOLD,
-                    center=(rect.x + box.centerx, rect.y + box.y + int(box.h * 0.8))))
-            self.message(screen, rect, "How many players?", 0.04, 0.06, theme.GOLD)
-            self.message(screen, rect, "Hold your hand on one", 0.6, 0.045)
+            blue, orange = game.players[0].glow, game.players[-1].glow
+
+            def one(cx, cy, size):
+                self.person_icon(cx, cy, size * 0.7, blue)
+
+            def two(cx, cy, size):
+                self.person_icon(cx - size * 0.32, cy, size * 0.7, blue)
+                self.person_icon(cx + size * 0.32, cy, size * 0.7, orange)
+
+            zones = game.player_zones()
+            self.choice_box(screen, rect, game, "one", zones["one"], to_layer, scale, "1 PLAYER",
+                            ["Play solo"], one)
+            self.choice_box(screen, rect, game, "two", zones["two"], to_layer, scale, "2 PLAYERS",
+                            ["BLUE vs ORANGE", "phone sideways"], two)
+            self.message(screen, rect, "How many players?", 0.03, 0.06, theme.GOLD)
+            holding = any(game.hover[z] > 0 for z in zones)
+            self.message(screen, rect, "Keep holding..." if holding else "Hold your hand on one", 0.55, 0.045,
+                         theme.GOLD if holding else theme.CREAM)
+            self.message(screen, rect, "Remote:  Left = 1 player  |  Right = 2 players", 0.63, 0.026,
+                         (200, 190, 170))
         elif st == "menu":
-            for mode, (x0, y0, x1, y1) in game.menu_zones().items():
-                box = pygame.Rect(to_layer(x0, y0), (int((x1 - x0) * scale), int((y1 - y0) * scale)))
-                frac = game.hover[mode] / game.hover_needed(mode)
-                pygame.draw.rect(self.layer, (20, 10, 5, 190), box, border_radius=16)
-                fill = box.copy()
-                fill.h = int(box.h * min(1.0, frac))
-                fill.bottom = box.bottom
-                pygame.draw.rect(self.layer, (240, 195, 80, 150), fill, border_radius=16)
-                pygame.draw.rect(self.layer, (240, 195, 80, 255), box, 3, border_radius=16)
-                cx = rect.x + box.centerx
-                if mode in ("players", "settings"):
-                    label = f"PLAYERS: {game.n_players}" if mode == "players" else "WI-FI / SETTINGS"
-                    self.later.append(functools.partial(
-                        theme.text, screen, theme.font(scale * 0.028), label, theme.CREAM,
-                        center=(cx, rect.y + box.centery)))
-                    continue
-                icon = (self.art.get(fr.TYPES[9], int(scale * 0.06), "whole") if mode == "classic"
-                        else self.art.get(None, int(scale * 0.055), "bomb"))
-                self.layer.blit(icon, icon.get_rect(center=(box.centerx, box.y + box.h * 0.38)))
-                self.later.append(functools.partial(
-                    theme.text, screen, theme.font(scale * 0.045), mode.upper(), theme.GOLD,
-                    center=(cx, rect.y + box.y + int(box.h * 0.72))))
-                sub = "60 seconds" if mode == "classic" else "watch out!"
-                self.later.append(functools.partial(
-                    theme.text, screen, theme.font(scale * 0.028, name="arial"), sub,
-                    center=(cx, rect.y + box.y + int(box.h * 0.88))))
-            self.message(screen, rect, "Hold your hand on a game to pick it", 0.68, 0.045)
+            zones = game.menu_zones()
+
+            def art(kind, part):
+                def draw(cx, cy, size):
+                    surf = self.art.get(kind, max(8, int(size * 0.5)), part)
+                    self.layer.blit(surf, surf.get_rect(center=(cx, cy)))
+                return draw
+
+            def people(cx, cy, size):
+                cy += size * 0.15
+                if game.n_players == 2:
+                    self.person_icon(cx - size * 0.35, cy, size, game.players[0].glow)
+                    self.person_icon(cx + size * 0.35, cy, size, game.players[-1].glow)
+                else:
+                    self.person_icon(cx, cy, size * 1.1, game.players[0].glow)
+
+            versus = game.n_players == 2
+            self.choice_box(screen, rect, game, "classic", zones["classic"], to_layer, scale, "CLASSIC",
+                            ["60 seconds", "most fruit wins" if versus else f"best {game.best['classic']}"],
+                            art(fr.TYPES[9], "whole"))
+            self.choice_box(screen, rect, game, "survival", zones["survival"], to_layer, scale, "SURVIVAL",
+                            ["don't slice bombs!", "last one wins" if versus else f"best {game.best['survival']}"],
+                            art(None, "bomb"))
+            self.choice_box(screen, rect, game, "players", zones["players"], to_layer, scale,
+                            f"{game.n_players} PLAYER{'S' if versus else ''}", icon=people, compact=True,
+                            icon_width=1.9 if versus else 1.2)
+            self.choice_box(screen, rect, game, "settings", zones["settings"], to_layer, scale, "WI-FI",
+                            icon=self.wifi_icon, compact=True)
+            holding = any(game.hover[z] > 0 for z in zones)
+            self.message(screen, rect, "Keep holding..." if holding else "Hold your hand on a game", 0.55, 0.045,
+                         theme.GOLD if holding else theme.CREAM)
+            self.message(screen, rect, "Remote:  Left/Right = game  |  Up = players  |  Down = Wi-Fi",
+                         0.63, 0.026, (200, 190, 170))
         elif st == "ready":
             self.message(screen, rect, game.mode.upper(), 0.12, 0.08, theme.GOLD)
             two = game.n_players == 2
@@ -999,14 +1048,22 @@ class Renderer:
                 r = theme.text(screen, theme.font(left.w * 0.24), line, theme.GOLD, outline=3,
                                midtop=(left.centerx, y))
                 y = r.bottom - 4
-            if game.mode:
+            pre_game = game.state in ("calibrate", "players", "menu")
+            if pre_game:
+                f = theme.font(left.w * 0.09, name="arial")
+                theme.text(screen, f, "BEST SCORES", theme.CREAM, midtop=(left.centerx, left.y + left.h * 0.5))
+                for i, mode in enumerate(("classic", "survival")):
+                    theme.text(screen, theme.font(left.w * 0.11), f"{mode.title()}  {game.best[mode]}", theme.GOLD,
+                               midtop=(left.centerx, left.y + left.h * (0.58 + 0.1 * i)))
+            if game.mode and not pre_game:
                 theme.text(screen, theme.font(left.w * 0.09), game.mode.upper(), midtop=(left.centerx, y + 12))
             label, color = (game.players[0].name, game.players[0].glow) if versus else ("SCORE", theme.GOLD)
-            theme.text(screen, theme.font(left.w * 0.08, name="arial"), label, color if versus else theme.CREAM,
-                       midtop=(left.centerx, left.y + left.h * 0.56))
-            theme.text(screen, theme.font(left.w * 0.26), str(game.score), color, outline=3,
-                       midtop=(left.centerx, left.y + left.h * 0.61))
-            if game.mode:
+            if not pre_game:
+                theme.text(screen, theme.font(left.w * 0.08, name="arial"), label, color if versus else theme.CREAM,
+                           midtop=(left.centerx, left.y + left.h * 0.56))
+                theme.text(screen, theme.font(left.w * 0.26), str(game.score), color, outline=3,
+                           midtop=(left.centerx, left.y + left.h * 0.61))
+            if game.mode and not pre_game:
                 theme.text(screen, theme.font(left.w * 0.07, name="arial"), f"BEST  {game.best[game.mode]}",
                            midtop=(left.centerx, left.y + left.h * 0.88))
         if right:
@@ -1030,11 +1087,29 @@ class Renderer:
             if not versus and game.mode == "classic" and game.state in ("play", "over"):
                 theme.text(screen, theme.font(right.w * 0.08, name="arial"), f"missed {game.missed}",
                            midtop=(right.centerx, right.y + right.h * 0.45))
-            hint = hint or {"calibrate": "Stand in the middle", "players": "How many?",
-                            "menu": "Pick a game", "ready": "Hands up!",
-                            "countdown": "Get ready...", "play": "Slice!", "boom": "Ouch!",
-                            "over": "Well done!"}[game.state]
-            theme.text(screen, theme.font(right.w * 0.11), hint, theme.CREAM, midtop=(right.centerx, right.y + right.h * 0.58))
+            if game.state in ("calibrate", "players", "menu") and not hint:
+                theme.text(screen, theme.font(right.w * 0.11), "HOW TO PLAY", theme.GOLD, outline=2,
+                           midtop=(right.centerx, right.y + 30))
+                steps = ["Stand where you can see your whole body",
+                         "Hold a hand on a box to pick it",
+                         "Raise both hands to start",
+                         "Swipe fast through the fruit!"]
+                f = theme.font(right.w * 0.075, name="arial")
+                y = right.y + 30 + right.w * 0.2
+                for i, step in enumerate(steps, 1):
+                    active = (game.state == "calibrate" and i == 1) or (game.state != "calibrate" and i == 2)
+                    for j, line in enumerate(theme.wrap(f, f"{i}. {step}", right.w * 0.82)):
+                        theme.text(screen, f, line, theme.GOLD if active else theme.CREAM, outline=1,
+                                   topleft=(right.x + right.w * 0.09, y))
+                        y += f.get_height()
+                    y += f.get_height() * 0.5
+            else:
+                hint = hint or {"calibrate": "Stand in the middle", "players": "How many?",
+                                "menu": "Pick a game", "ready": "Hands up!",
+                                "countdown": "Get ready...", "play": "Slice!", "boom": "Ouch!",
+                                "over": "Well done!"}[game.state]
+                theme.text(screen, theme.font(right.w * 0.11), hint, theme.CREAM,
+                           midtop=(right.centerx, right.y + right.h * 0.58))
             if self.show_debug:
                 f = theme.font(max(11, right.w // 22), bold=False, name="consolas")
                 lines = [f"fps {fps:4.1f}  pose {tracker.pose_ms:4.1f} ms",
