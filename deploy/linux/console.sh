@@ -33,14 +33,15 @@ fi
 # The game connects to the phone itself (adb forward + DroidCam app); start adb early.
 adb start-server >/dev/null 2>&1 || true
 
-# 2. Game loop. Exit code 0 means Ctrl+Q: stop and hand tty1 over to a shell.
+# 2. Game loop. Exit code 10 means Ctrl+Q: stop and hand tty1 over to a shell. Anything else
+#    (an update stopping the game, a crash) starts it again.
 while true; do
     log "starting game"
     rm -f "$LOG_DIR/.game_exit"
     xinit "$REPO_DIR/deploy/linux/run_game.sh" -- :0 vt1 -keeptty -nolisten tcp >> "$LOG_DIR/xorg.log" 2>&1
     code="$(cat "$LOG_DIR/.game_exit" 2>/dev/null || echo 1)"
     log "game exited with code $code"
-    [ "$code" -eq 0 ] && break
+    [ "$code" -eq 10 ] && break
     sleep 3
 done
 log "---- console stopped (Ctrl+Q pressed) ----"

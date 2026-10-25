@@ -45,6 +45,7 @@ from pose_service.filters import OneEuroFilter  # noqa: E402
 SCORES_FILE = HERE / "highscores.json"
 OVER_COOLDOWN = 2.0
 BOOM_SECONDS = 1.8
+STOP_CONSOLE = 10  # exit code for Ctrl+Q: the console launcher stops instead of restarting the game
 DEFAULT_TORSO = 0.22  # used until the player's torso has been measured
 
 
@@ -1029,6 +1030,7 @@ def main():
 
     try:
         running = True
+        stop_console = False
         while running:
             events = pygame.event.get()
             for event in events:
@@ -1038,7 +1040,7 @@ def main():
                     continue
                 # Quit is Ctrl+Q only: a remote's Back button sends Esc, which must not end the console.
                 elif event.key == pygame.K_q and event.mod & pygame.KMOD_CTRL:
-                    running = False
+                    running, stop_console = False, True
                 elif setup.active:
                     continue  # the setup screens use the keys themselves (typing a password)
                 elif event.key == pygame.K_r:
@@ -1095,7 +1097,10 @@ def main():
     finally:
         tracker.close()
         pygame.quit()
+    # Any other ending (an update stopping the game, a crash, a stop signal that SDL turns into a
+    # normal quit) returns 0 and the console launcher simply starts the game again.
+    return STOP_CONSOLE if stop_console else 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

@@ -36,14 +36,15 @@ if ($client) {
     Log 'stopped the DroidCam PC client (the game connects to the phone directly)'
 }
 
-# 3. Game loop. pythonw = no console window. Exit code 0 means Ctrl+Q: stop and show the desktop.
+# 3. Game loop. pythonw = no console window. Exit code 10 means Ctrl+Q: stop and show the desktop;
+#    anything else (an update stopping the game, a crash) starts it again.
 $Python = Join-Path $Root '.venv\Scripts\pythonw.exe'
 while ($true) {
     Log 'starting game'
     $game = Start-Process -FilePath $Python -ArgumentList 'prototype\fruit_slice.py' -WorkingDirectory $Root `
         -RedirectStandardError (Join-Path $Logs 'game_errors.log') -PassThru -Wait
     Log "game exited with code $($game.ExitCode)"
-    if ($game.ExitCode -eq 0) { break }
+    if ($game.ExitCode -eq 10) { break }
     Start-Sleep -Seconds 3
 }
 Log '---- console stopped (Ctrl+Q pressed) ----'
