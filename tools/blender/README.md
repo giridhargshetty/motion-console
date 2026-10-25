@@ -75,6 +75,9 @@ animation below: **Animations** tab → search the name → click it → tick
 - Frames per second: **30**
 - Keyframe Reduction: **none**
 
+(Downloaded **With Skin** or at **60 fps** by mistake? That works too, only the
+files are bigger. Any one of them can then also serve as `character.fbx`.)
+
 Save into `assets/source/<folder name>/anims/`. The file name tells the script
 what the animation is, so keep a name containing the word in the right-hand
 column (the Mixamo default names already do), or simply rename the file to the key,
@@ -92,8 +95,11 @@ e.g. `jab.fbx`.
 | Knocked Out | `knockout` | knock, ko, dying, death, fall |
 | Victory | `victory` | victory, win, celebrate, cheer |
 
-Missing animations are fine; the script warns and the game falls back to
-placeholder art for those. An Uppercut is accepted too (key `uppercut`). Files
+**Idle is the one you can't skip**: the game shows it most of the time, and it
+falls back to drawn shapes whenever idle is missing. The game currently plays
+idle, block, jab, cross, head hit, knocked out and victory; the others are
+rendered for later. Other missing animations are fine: the script warns and the
+game uses idle instead. An Uppercut is accepted too (key `uppercut`). Files
 with other names are still rendered, under their own name.
 
 When you're done a folder looks like:
@@ -125,7 +131,7 @@ Repeat with `contender` and `champ`. Each character takes a few minutes. Options
 | --- | --- | --- |
 | `--size 512` | 512 | Frame width and height in pixels |
 | `--fps 15` | 15 | Frames per second of output (fewer = smaller files) |
-| `--src-fps 30` | 30 | The fps you picked on Mixamo |
+| `--src-fps 30` | from file | Override the fps the FBX was saved at |
 | `--framing full` | full | `full` = whole body (knockout stays in shot); `upper` = waist up, bigger |
 | `--glove-color 0.1,0.2,0.8` | red | Glove colour as red,green,blue from 0 to 1 |
 | `--engine eevee` | eevee | `cycles` (slower, works without a GPU) or `workbench` (flat, fastest) |
@@ -135,8 +141,15 @@ Blender 5.2 prints a red `ImportError ... remote_library` traceback when it
 starts. That's Blender's own bug and harmless; ignore it.
 
 It prints which file became which key, warns about missing ones, and ends with
-the total size. Aim for roughly **5–7 MB per character** because the frames are
-committed to git; if it's bigger, use `--fps 12`.
+the total size. Textured characters come out at roughly 100 KB per frame, so
+shrink them to 256-colour PNGs (about 6× smaller, no visible change):
+
+```powershell
+.venv\Scripts\python tools/blender/shrink_frames.py assets/boxers/rookie
+```
+
+Aim for **5–7 MB per character** after shrinking, because the frames are
+committed to git. If it's still bigger, re-render with `--fps 12`.
 
 ### Check the result
 

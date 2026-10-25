@@ -44,7 +44,7 @@ CANONICAL = ["idle", "jab", "cross", "hook", "block",
 # First matching rule wins, so specific words come before general ones
 # ("Body Block" is a block, not a body hit; "Hook Punch" is a hook).
 ANIM_RULES = [
-    ("knockout", r"knock|\bko\b|dying|death|fall"),
+    ("knockout", r"knock|\bko\b|dying|death|fall|defeat"),
     ("victory", r"victory|\bwin|celebrat|cheer"),
     ("block", r"block|guard|cover"),
     ("hit_head", r"head.?hit|hit.?head|face.?hit|head.?react"),
@@ -73,7 +73,8 @@ def parse_args():
     p.add_argument("--out", required=True, help="output folder, e.g. assets/boxers/rookie")
     p.add_argument("--size", type=int, default=512, help="frame width and height in px")
     p.add_argument("--fps", type=float, default=15, help="output frames per second")
-    p.add_argument("--src-fps", type=float, default=30, help="fps the FBX was downloaded at")
+    p.add_argument("--src-fps", type=float, default=0,
+                   help="fps the FBX was downloaded at (default: read from each file)")
     p.add_argument("--framing", choices=["full", "upper"], default="full",
                    help="full = whole body (knockouts stay in frame); upper = waist up, bigger")
     p.add_argument("--glove-color", default="",
@@ -159,10 +160,19 @@ def load_character(path):
 
 
 def load_action(path, char_prefix):
-    """Import an animation FBX, keep only its action, delete the rest."""
+    """Import an animation FBX, keep only its action, delete the rest.
+
+    Returns (action, fps the file was saved at)."""
+    old_actions = set(bpy.data.actions)
     objs = import_fbx(path)
+    fps = bpy.context.scene.render.fps / bpy.context.scene.render.fps_base
     arm = next((o for o in objs if o.type == "ARMATURE"), None)
     action = arm.animation_data.action if arm and arm.animation_data else None
+    # "With Skin" downloads carry a second, mostly still take ("Take 001")
+    # that Blender may attach instead; the real move is named "...mixamo.com...".
+    mixamo = [a for a in bpy.data.actions if a not in old_actions and "mixamo.com" in a.name]
+    if mixamo:
+        action = mixamo[0]
     if action is not None:
         action.use_fake_user = True
         # A different rig prefix (mixamorig1: vs mixamorig:) would leave the
@@ -173,7 +183,7 @@ def load_action(path, char_prefix):
                 fc.data_path = fc.data_path.replace(f'"{anim_prefix}', f'"{char_prefix}', 1)
     for o in objs:
         bpy.data.objects.remove(o, do_unlink=True)
-    return action
+    return action, fps
 
 
 # ------------------------------------------------------------------ measure
@@ -418,10 +428,10 @@ def find_impact(scene, arm, frames, forward):
     return best[1], best[2]
 
 
-def render_anim(scene, cam, arm, action, key, out_dir, args, forward):
+def render_anim(scene, cam, arm, action, src_fps, key, out_dir, args, forward):
     assign_action(arm, action)
     loop = key in LOOPS
-    frames = sample_frames(action, args.src_fps, args.fps, loop)
+    frames = sample_frames(action, src_fps, args.fps, loop)
     anim_dir = out_dir / key
     anim_dir.mkdir(parents=True, exist_ok=True)
     for old in anim_dir.glob("frame_*.png"):
@@ -489,13 +499,13 @@ def main():
             key = f"{key}_{n}"
         if only and key not in only:
             continue
-        action = load_action(path, prefix)
+        action, file_fps = load_action(path, prefix)
         if action is None:
             print(f"WARNING: {path.name} has no animation, skipped")
             continue
         action.name = key
-        actions[key] = action
-        print(f"{path.name} -> {key}")
+        actions[key] = (action, args.src_fps or file_fps)
+        print(f"{path.name} -> {key} ({actions[key][1]:g} fps)")
 
     missing = [k for k in CANONICAL if k not in actions and (not only or k in only)]
     if missing:
@@ -515,8 +525,8 @@ def main():
         },
     })
     anims = meta.setdefault("animations", {})
-    for key, action in actions.items():
-        anims[key] = render_anim(scene, cam, arm, action, key, out_dir, args, forward)
+    for key, (action, src_fps) in actions.items():
+        anims[key] = render_anim(scene, cam, arm, action, src_fps, key, out_dir, args, forward)
     meta_path.write_text(json.dumps(meta, indent=2) + "\n")
 
     total = sum(p.stat().st_size for p in out_dir.rglob("*.png"))
