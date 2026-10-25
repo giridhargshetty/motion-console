@@ -52,7 +52,7 @@ show_at_startup = true   # network screen first; it goes on to the game by itsel
 auto_start_seconds = 10
 
 [game]
-window_width = 1280     # drawing size; full screen scales this up on the GPU (cheap even on a 4K TV)
+window_width = 1280     # windowed size (full screen uses the screen size; the console sets the TV to 720p)
 window_height = 720
 play_aspect = 0.75     # play area width / height. The phone picture is 0.5625 (9:16); wider shows a
                        # band of it with the top/bottom trimmed. 0 = exactly the camera's shape

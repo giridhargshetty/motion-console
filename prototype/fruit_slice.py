@@ -1091,10 +1091,11 @@ def main():
     keep_display_awake()
 
     def set_mode():
-        # Always draw at window size (720p); SCALED lets the GPU scale it to a full screen.
-        # Drawing at the screen's own size costs a lot of CPU on a 4K TV and starves pose tracking.
+        # Full screen draws at the screen's own size. On the console that's 720p: run_game.sh sets
+        # the TV to 1280x720, because drawing 4K on the CPU starves pose tracking.
         pygame.mouse.set_visible(not fullscreen)
-        return pygame.display.set_mode(windowed, pygame.SCALED | (pygame.FULLSCREEN if fullscreen else 0))
+        return pygame.display.set_mode((0, 0) if fullscreen else windowed,
+                                       pygame.FULLSCREEN if fullscreen else 0)
 
     screen = set_mode()
     tracker = pl.PoseTracker(cfg)
@@ -1133,8 +1134,7 @@ def main():
                     renderer.show_debug = not renderer.show_debug
                 elif event.key == pygame.K_f:
                     fullscreen = not fullscreen
-                    pygame.display.toggle_fullscreen()  # same 720p drawing size, so no new window
-                    pygame.mouse.set_visible(not fullscreen)
+                    screen = set_mode()
                 else:
                     game.press(event.key)
 
