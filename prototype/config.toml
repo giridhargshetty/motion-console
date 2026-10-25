@@ -40,11 +40,21 @@ trail_seconds = 0.22 # how long the blade trail stays on screen
 combo_seconds = 0.4  # cuts this close together build a combo (3+ = bonus points)
 
 [menu]
-hover_seconds = 1.2  # hold a hand on a mode this long to pick it
+hover_seconds = 1.2  # hold a hand on a mode (or a setup button) this long to pick it
+settings_hover_seconds = 2.5  # the WI-FI / SETTINGS strip above head height: longer, so kids don't open it
+
+[network]
+backend = "auto"         # "auto" = NetworkManager (nmcli) when present, i.e. the Linux kiosk; off elsewhere.
+                         # "fake" = simulated networks, to try the Wi-Fi screens on the laptop
+show_at_startup = true   # network screen first; it goes on to the game by itself when online
+auto_start_seconds = 10
 
 [game]
 window_width = 1280
 window_height = 720
+play_aspect = 0.75     # play area width / height. The phone picture is 0.5625 (9:16); wider shows a
+                       # band of it with the top/bottom trimmed. 0 = exactly the camera's shape
+crop_top_share = 0.4   # of the trimmed part, how much comes off the top (rest off the bottom)
 fullscreen = false   # F toggles in game
 hands_up_seconds = 1.0
 countdown_seconds = 3

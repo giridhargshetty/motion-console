@@ -3,12 +3,73 @@
 Goal: plug the phone in by USB, the TV by HDMI, power on, and the game appears on the TV.
 Changes are made on the laptop and pushed to GitHub; the mini PC pulls them at every start.
 
+The mini PC runs **Ubuntu Server 24.04** as a kiosk (recommended, below). The Windows setup
+further down still works if you ever need it.
+
+## Linux kiosk (recommended)
+
+```
+laptop:  edit -> test -> git commit -> git push  ──►  GitHub (private repo: giridhargshetty/motion-console)
+mini PC: power on -> auto-login tty1 -> console.sh: git pull -> cage (full screen) -> game
+                                                           game: adb -> DroidCam phone app -> pictures
+```
+
+No desktop, no login screen, no pop-ups. Ctrl+Q in the game (keyboard) leaves a shell on the TV for
+maintenance; everything else is done over SSH from the laptop via Tailscale.
+
+### Controls: no keyboard or mouse needed
+
+Every console screen works three ways: **hands** (hover over a button ~1 s), **mouse** (click), or a
+**remote with arrow keys + OK** (a USB air-mouse remote acts as mouse *and* keyboard on Linux with no
+setup). The TV's own remote can't reach a PC: that needs HDMI-CEC, which PCs almost never have
+(a USB-CEC adapter could add it later).
+
+- Start-up shows a **Network** screen: Wi-Fi name, internet, remote access (Tailscale). When online it
+  goes on to the game after 10 s by itself.
+- **CHOOSE WI-FI** lists nearby networks; pick one, type the password on the on-screen keyboard
+  (or a real keyboard), CONNECT. The menu's **WI-FI / SETTINGS** box opens the same screens later.
+- Remote in the game menu: Left = Classic, Right = Survival, Down = Wi-Fi/settings, OK = start.
+  Esc/Back goes back a screen; only **Ctrl+Q** quits the console.
+- Tailscale starts at every boot and reconnects by itself whenever Wi-Fi is up. In the Tailscale admin
+  console, turn off **key expiry** for this machine so it never needs signing in again.
+
+### Install (you, once, about 30 minutes)
+
+1. Download **Ubuntu Server 24.04 LTS** (ubuntu.com/download/server) and write it to a USB stick
+   with balenaEtcher. This erases the mini PC's disk.
+2. Boot the mini PC from the stick (Dell: F12 at power-on for the boot menu). In the installer:
+   use the whole disk, pick a username/password, and tick **Install OpenSSH server**.
+3. After the reboot, sign in on the mini PC and add it to Tailscale:
+   `curl -fsSL https://tailscale.com/install.sh | sh` then `sudo tailscale up` and open the link it shows.
+4. On the laptop: `ssh-copy-id <user>@<mini-pc-tailscale-name>` and type the mini PC password once.
+5. BIOS (F2 at power-on): **AC Recovery = Power On**, so the box starts as soon as it gets power.
+
+### Setup (Claude, over SSH)
+
+1. Give the box read-only access to the private repo: an SSH key made on the box, added to the repo
+   as a **deploy key** (read-only, works only for this repo).
+2. `git clone git@github.com:giridhargshetty/motion-console.git ~/motion-console`
+3. `bash ~/motion-console/deploy/linux/setup.sh` installs packages (Python 3.12, adb + phone udev rules,
+   cage), builds `.venv`, downloads the pose models, writes `prototype/config.local.toml`
+   (fullscreen), sets auto-login on tty1 to start `deploy/linux/console.sh`, and speeds up boot.
+4. Phone: plug it in, tap **Allow** on "Allow USB debugging?" (tick "Always allow"), and turn on
+   Developer options -> **Stay awake**.
+5. `sudo reboot`, then check `logs/console.log`, the frame rate and pose time on the debug line,
+   and record the mini PC numbers in `bench/RESULTS.md` (the Phase 0 gate names this machine).
+
+### Updating
+
+Commit and push on the laptop; then either restart the box, or over SSH:
+`cd ~/motion-console && git pull && pkill -f fruit_slice.py` (the console loop restarts the game).
+
+## Windows (alternative)
+
 ```
 laptop:  edit -> test -> git commit -> git push  ──►  GitHub (private repo)
 mini PC: power on -> auto sign-in -> console.ps1: git pull -> phone app + DroidCam -> game
 ```
 
-## What happens at power-on
+### What happens at power-on
 
 1. Windows signs in automatically (set up once, below).
 2. The Startup shortcut runs `deploy/console.ps1`, which:
@@ -20,9 +81,9 @@ mini PC: power on -> auto sign-in -> console.ps1: git pull -> phone app + DroidC
    No DroidCam PC client or virtual webcam is involved. It shows "Connecting to the camera..." with the
    reason until pictures arrive, then asks the player to stand in the middle.
 
-**Esc** in the game quits to the desktop for maintenance (needs a keyboard). Logs: `logs\console.log` and `logs\game_errors.log`.
+**Ctrl+Q** in the game quits to the desktop for maintenance (needs a keyboard). Logs: `logs\console.log` and `logs\game_errors.log`.
 
-## One-time setup on the mini PC
+### One-time setup on the mini PC
 
 1. Copy `deploy\setup_minipc.ps1` to the mini PC (USB stick, or download it from the GitHub repo page) and run in PowerShell:
    ```
@@ -50,12 +111,12 @@ mini PC: power on -> auto sign-in -> console.ps1: git pull -> phone app + DroidC
 7. Check the Phase 0 gate on this machine: the game's debug line (right panel) shows fps and pose ms.
    Add the numbers to `bench/RESULTS.md`; the gate names this machine.
 
-## Updating
+### Updating (Windows)
 
-On the laptop: commit and `git push`. Next time the mini PC starts (or after Esc + restart), it pulls the new version.
+On the laptop: commit and `git push`. Next time the mini PC starts (or after Ctrl+Q + restart), it pulls the new version.
 Machine-only settings stay in `prototype\config.local.toml`, which git ignores, so updates never overwrite them.
 
-## If something goes wrong
+## If something goes wrong (both)
 
 | Symptom | Check |
 | --- | --- |

@@ -3,7 +3,7 @@
 #   2. makes sure the DroidCam PC client isn't running (it would take the phone's only video connection)
 #   3. runs the game fullscreen, and restarts it if it crashes
 # The game itself connects to the phone over USB (adb), opening the DroidCam app if needed.
-# Press Esc in the game to quit to the desktop for maintenance. Log: logs\console.log
+# Press Ctrl+Q in the game to quit to the desktop for maintenance. Log: logs\console.log
 
 $ErrorActionPreference = 'Continue'
 $Root = Split-Path -Parent $PSScriptRoot
@@ -36,7 +36,7 @@ if ($client) {
     Log 'stopped the DroidCam PC client (the game connects to the phone directly)'
 }
 
-# 3. Game loop. pythonw = no console window. Exit code 0 means Esc: stop and show the desktop.
+# 3. Game loop. pythonw = no console window. Exit code 0 means Ctrl+Q: stop and show the desktop.
 $Python = Join-Path $Root '.venv\Scripts\pythonw.exe'
 while ($true) {
     Log 'starting game'
@@ -46,4 +46,4 @@ while ($true) {
     if ($game.ExitCode -eq 0) { break }
     Start-Sleep -Seconds 3
 }
-Log '---- console stopped (Esc pressed) ----'
+Log '---- console stopped (Ctrl+Q pressed) ----'

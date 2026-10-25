@@ -6,7 +6,8 @@ Flow (no keyboard needed):
   1. Calibrate: stand in the middle, whole body in view, hold still.
   2. Menu: hold a hand on CLASSIC (60 s, fruit only) or SURVIVAL (bombs end the game).
   3. Raise both hands above your head to start, then 3-2-1.
-Keys (for the grown-up): R rotate camera  S skeleton  D debug line  F fullscreen  Esc quit
+Keys (for the grown-up): R rotate camera  S skeleton  D debug line  F fullscreen  Ctrl+Q quit
+Remote (D-pad): Left/Right pick a game, Down opens Wi-Fi/settings, OK = start. Esc/Back = back.
 Settings: prototype/config.toml
 
 Throwaway prototype for game feel (CLAUDE.md Phase 1). Our own code and art; ideas only
@@ -36,6 +37,8 @@ import effects  # noqa: E402
 import fruits as fr  # noqa: E402
 import player as pl  # noqa: E402
 import theme  # noqa: E402
+from console_setup import Setup  # noqa: E402
+from network import Network  # noqa: E402
 from pose_service.filters import OneEuroFilter  # noqa: E402
 
 SCORES_FILE = HERE / "highscores.json"
@@ -76,7 +79,7 @@ class Hand:
         self.segment = None   # (from, to) moved since the last pose sample
         self.trail = []       # (pos, t, fast)
 
-    def update(self, kp, t, aspect, cut_speed):
+    def update(self, kp, t, view, cut_speed):
         self.segment = None
         if kp is None or kp[self.ids[0]][2] < self.min_vis:
             # Lost: forget the old position so reappearing doesn't count as a huge swipe.
@@ -85,8 +88,7 @@ class Hand:
             self.fy.reset()
         else:
             # Centre of wrist, pinky and index knuckles: a bit further out than the wrist.
-            x = sum(kp[i][0] for i in self.ids) / 3 * aspect
-            y = sum(kp[i][1] for i in self.ids) / 3
+            x, y = view.world(sum(kp[i][0] for i in self.ids) / 3, sum(kp[i][1] for i in self.ids) / 3)
             pos = (self.fx(x, t), self.fy(y, t))
             if self.pos is not None and t > self.t:
                 self.speed = math.dist(pos, self.pos) / (t - self.t)
@@ -126,12 +128,15 @@ class Game:
         self.best = scores
         self.state, self.state_t, self.hold = "calibrate", 0.0, 0.0
         self.mode = None
-        self.hover = {"classic": 0.0, "survival": 0.0}
+        self.hover = {"classic": 0.0, "survival": 0.0, "settings": 0.0}
+        self.want_settings = False
+        self.last_kp = None
         self.calib_ok, self.calib_msg = False, ""
         self.torso = None
         self.t = self.last_t = 0.0
         self.last_seen = 0.0
-        self.aspect = 9 / 16
+        self.view = View()
+        self.aspect = self.view.aspect
         self.rotation_locked = True  # mirrors tracker.rotation_locked, set by the main loop
         self.paused = False
         self.score = self.missed = 0
@@ -162,11 +167,10 @@ class Game:
     def torso_length(self, kp):
         if not self.visible(kp, pl.L_SHOULDER, pl.R_SHOULDER, pl.L_HIP, pl.R_HIP):
             return None
-        a = self.aspect
-        sx = (kp[pl.L_SHOULDER][0] + kp[pl.R_SHOULDER][0]) / 2 * a
-        sy = (kp[pl.L_SHOULDER][1] + kp[pl.R_SHOULDER][1]) / 2
-        hx = (kp[pl.L_HIP][0] + kp[pl.R_HIP][0]) / 2 * a
-        hy = (kp[pl.L_HIP][1] + kp[pl.R_HIP][1]) / 2
+        sx, sy = self.view.world((kp[pl.L_SHOULDER][0] + kp[pl.R_SHOULDER][0]) / 2,
+                                 (kp[pl.L_SHOULDER][1] + kp[pl.R_SHOULDER][1]) / 2)
+        hx, hy = self.view.world((kp[pl.L_HIP][0] + kp[pl.R_HIP][0]) / 2,
+                                 (kp[pl.L_HIP][1] + kp[pl.R_HIP][1]) / 2)
         return math.hypot(sx - hx, sy - hy)
 
     def calib_check(self, kp):
@@ -192,22 +196,66 @@ class Game:
 
     def menu_zones(self):
         a = self.aspect
-        return {"classic": (0.05 * a, 0.12, 0.47 * a, 0.44),
-                "survival": (0.53 * a, 0.12, 0.95 * a, 0.44)}
+        # Settings sits in a strip above head height: grown-ups reach it, resting arms never do.
+        return {"classic": (0.05 * a, 0.14, 0.47 * a, 0.46),
+                "survival": (0.53 * a, 0.14, 0.95 * a, 0.46),
+                "settings": (0.3 * a, 0.015, 0.7 * a, 0.09)}
+
+    def hover_needed(self, zone):
+        m = self.cfg["menu"]
+        return m["settings_hover_seconds"] if zone == "settings" else m["hover_seconds"]
 
     # ---- update ----
 
-    def update(self, kp, fresh, t_pose, t, aspect):
+    def pointers(self):
+        """Hands as pointers for the setup screens, as (u, v) in 0..1 of the play area.
+
+        Kinect-style: a box in front of the shoulders (two torso-lengths wide, from about head top
+        to chest) maps to the whole play area, so every button is reachable with a raised arm,
+        and arms hanging at rest are below the box and point at nothing."""
+        kp, torso = self.last_kp, self.torso
+        if kp is None or not torso or not self.visible(kp, pl.L_SHOULDER, pl.R_SHOULDER):
+            return []
+        sx, sy = self.view.world((kp[pl.L_SHOULDER][0] + kp[pl.R_SHOULDER][0]) / 2,
+                                 (kp[pl.L_SHOULDER][1] + kp[pl.R_SHOULDER][1]) / 2)
+        out = []
+        for hand in self.hands:
+            if hand.pos is None:
+                continue
+            u = (hand.pos[0] - (sx - torso)) / (2 * torso)
+            v = (hand.pos[1] - (sy - 0.9 * torso)) / (1.5 * torso)
+            if -0.1 <= u <= 1.1 and -0.15 <= v <= 1.0:
+                out.append((min(max(u, 0.0), 1.0), min(max(v, 0.0), 1.0)))
+        return out
+
+    def track(self, kp, fresh, t_pose, t, view):
+        """Follow the hands and body size only (also used while a setup screen is showing)."""
         dt = 0.0 if not self.last_t else min(t - self.last_t, 0.05)
-        self.t, self.last_t, self.aspect = t, t, aspect
+        self.t, self.last_t, self.view, self.aspect = t, t, view, view.aspect
+        self.last_kp = kp
         if fresh:
             for hand in self.hands:
-                hand.update(kp, t_pose, aspect, self.cut_speed())
+                hand.update(kp, t_pose, view, self.cut_speed())
             torso = self.torso_length(kp)
             if torso:
                 self.torso = torso if self.torso is None else self.torso * 0.9 + torso * 0.1
         if kp is not None:
             self.last_seen = t
+        return dt
+
+    def press(self, key):
+        """Remote / keyboard shortcuts so the menus also work with a D-pad remote."""
+        if self.state == "menu":
+            choice = {pygame.K_LEFT: "classic", pygame.K_RIGHT: "survival", pygame.K_DOWN: "settings"}.get(key)
+            if choice:
+                self.select(choice)
+        elif self.state in ("ready", "over") and key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+            if self.state == "ready" or self.t - self.state_t >= OVER_COOLDOWN:
+                self.goto("countdown" if self.state == "ready" else "menu")
+                self.sounds.append("beep" if self.state == "countdown" else "select")
+
+    def update(self, kp, fresh, t_pose, t, view):
+        dt = self.track(kp, fresh, t_pose, t, view)
         gone = t - self.last_seen
 
         getattr(self, "_" + self.state)(kp, fresh, dt, gone)
@@ -233,12 +281,17 @@ class Game:
         for mode, (x0, y0, x1, y1) in self.menu_zones().items():
             inside = any(h.pos and x0 <= h.pos[0] <= x1 and y0 <= h.pos[1] <= y1 for h in self.hands)
             self.hover[mode] = self.hover[mode] + dt if inside else max(0.0, self.hover[mode] - 2 * dt)
-            if self.hover[mode] >= self.cfg["menu"]["hover_seconds"]:
-                self.mode = mode
-                self.hover = dict.fromkeys(self.hover, 0.0)
-                self.goto("ready")
-                self.sounds.append("select")
-                return
+            if self.hover[mode] >= self.hover_needed(mode):
+                return self.select(mode)
+
+    def select(self, choice):
+        self.hover = dict.fromkeys(self.hover, 0.0)
+        self.sounds.append("select")
+        if choice == "settings":
+            self.want_settings = True  # the main loop opens the setup screens
+        else:
+            self.mode = choice
+            self.goto("ready")
 
     def _ready(self, kp, fresh, dt, gone):
         if gone > self.cfg["calibrate"]["lost_seconds"]:
@@ -444,14 +497,45 @@ def make_sounds():
 
 # ---------------------------------------------------------------- drawing
 
-def camera_rect(frame, screen):
-    """Largest rectangle with the camera's aspect ratio that fits inside the bamboo frame."""
+class View:
+    """Which part of the camera picture the play area shows, and how keypoints (0..1 of the whole
+    picture) map to world units (y 0..1 down the play area, x 0..aspect across it).
+
+    A play area wider than the (portrait) picture shows a band of it: the full width, with a little
+    trimmed off the top and more off the bottom (feet matter least). Pose still runs on the
+    whole picture, so nothing is lost for tracking."""
+
+    def __init__(self, x0=0.0, y0=0.0, w=1.0, h=1.0, aspect=9 / 16):
+        self.x0, self.y0, self.w, self.h, self.aspect = x0, y0, w, h, aspect
+
+    @classmethod
+    def fit(cls, frame_aspect, play_aspect, top_share):
+        if not play_aspect or abs(play_aspect - frame_aspect) < 1e-3:
+            return cls(aspect=frame_aspect)
+        if play_aspect > frame_aspect:  # wider than the picture: keep width, trim height
+            h = frame_aspect / play_aspect
+            return cls(y0=(1 - h) * top_share, h=h, aspect=play_aspect)
+        w = play_aspect / frame_aspect  # narrower: keep height, trim the sides evenly
+        return cls(x0=(1 - w) / 2, w=w, aspect=play_aspect)
+
+    def world(self, x, y):
+        return (x - self.x0) / self.w * self.aspect, (y - self.y0) / self.h
+
+    def crop(self, frame):
+        fh, fw = frame.shape[:2]
+        return frame[int(self.y0 * fh):int((self.y0 + self.h) * fh), int(self.x0 * fw):int((self.x0 + self.w) * fw)]
+
+
+def layout(frame, screen, cfg):
+    """Play-area rectangle (largest that fits inside the bamboo frame) and its View."""
+    g = cfg["game"]
     sw, sh = screen.get_size()
     margin = theme.frame_thickness(sh) + max(10, sh // 50)
     fh, fw = frame.shape[:2] if frame is not None else (16, 9)
-    s = min((sw - 2 * margin) / fw, (sh - 2 * margin) / fh)
-    w, h = int(fw * s), int(fh * s)
-    return pygame.Rect((sw - w) // 2, (sh - h) // 2, w, h)
+    view = View.fit(fw / fh, g.get("play_aspect", 0), g.get("crop_top_share", 0.4))
+    s = min((sw - 2 * margin) / view.aspect, sh - 2 * margin)
+    w, h = int(view.aspect * s), int(s)
+    return pygame.Rect((sw - w) // 2, (sh - h) // 2, w, h), view
 
 
 class Renderer:
@@ -474,8 +558,8 @@ class Renderer:
         base = {"mid": h / 14, "big": h / 10, "huge": h / 5}[size]
         return theme.font(int(base * (0.5 + 0.5 * grow)))
 
-    def draw(self, screen, game, tracker, frame, fresh, kp, fps):
-        rect = camera_rect(frame, screen)
+    def draw(self, screen, game, tracker, frame, fresh, kp, fps, rect, view, overlay=None):
+        """overlay: a setup screen (Wi-Fi etc.) drawn in the play area instead of the game."""
         self.rect = rect
         key = (screen.get_size(), tuple(rect))
         if key != self.backdrop_key:
@@ -493,7 +577,7 @@ class Renderer:
             self.cam_surf = None
             screen.fill((10, 8, 6), rect)
         if frame is not None and (fresh or self.cam_surf is None):
-            rgb = cv2.cvtColor(cv2.resize(frame, rect.size), cv2.COLOR_BGR2RGB)
+            rgb = cv2.cvtColor(cv2.resize(view.crop(frame), rect.size), cv2.COLOR_BGR2RGB)
             self.cam_surf = pygame.image.frombuffer(rgb.tobytes(), rect.size, "RGB")
         if self.cam_surf is not None:
             screen.blit(self.cam_surf, rect)
@@ -509,10 +593,17 @@ class Renderer:
             return int(x * scale), int(y * scale)
 
         screen.set_clip(rect)
+        if overlay is not None:
+            screen.blit(self.dim, rect)
+            screen.blit(self.dim, rect)  # twice: setup text needs a darker picture behind it
+            overlay.draw(screen, rect)
+            screen.set_clip(None)
+            self.draw_panels(screen, game, tracker, rect, fps, hint="Settings")
+            return
         if game.state not in ("play", "boom"):
             screen.blit(self.dim, rect)
         if self.show_skeleton or game.state == "calibrate":
-            self.draw_skeleton(screen, kp, game.aspect, to_px)
+            self.draw_skeleton(screen, kp, view, to_px)
 
         game.fx.draw_back(screen, to_px)
         for p in game.pieces:
@@ -551,13 +642,13 @@ class Renderer:
         screen.blit(surf, surf.get_rect(center=to_px(body.x, body.y)))
 
     @staticmethod
-    def draw_skeleton(screen, kp, aspect, to_px):
+    def draw_skeleton(screen, kp, view, to_px):
         if kp is None:
             return
         for a, b in pl.BONES:
             if kp[a][2] > 0.4 and kp[b][2] > 0.4:
-                pygame.draw.line(screen, (120, 255, 170), to_px(kp[a][0] * aspect, kp[a][1]),
-                                 to_px(kp[b][0] * aspect, kp[b][1]), 3)
+                pygame.draw.line(screen, (120, 255, 170), to_px(*view.world(kp[a][0], kp[a][1])),
+                                 to_px(*view.world(kp[b][0], kp[b][1])), 3)
 
     def draw_blades(self, game, to_layer, scale):
         """Glowing blade trail: wide faint glow under a thin bright core, tapering with age."""
@@ -607,17 +698,22 @@ class Renderer:
         elif st == "menu":
             for mode, (x0, y0, x1, y1) in game.menu_zones().items():
                 box = pygame.Rect(to_layer(x0, y0), (int((x1 - x0) * scale), int((y1 - y0) * scale)))
-                frac = game.hover[mode] / self.cfg["menu"]["hover_seconds"]
+                frac = game.hover[mode] / game.hover_needed(mode)
                 pygame.draw.rect(self.layer, (20, 10, 5, 190), box, border_radius=16)
                 fill = box.copy()
                 fill.h = int(box.h * min(1.0, frac))
                 fill.bottom = box.bottom
                 pygame.draw.rect(self.layer, (240, 195, 80, 150), fill, border_radius=16)
                 pygame.draw.rect(self.layer, (240, 195, 80, 255), box, 3, border_radius=16)
+                cx = rect.x + box.centerx
+                if mode == "settings":
+                    self.later.append(functools.partial(
+                        theme.text, screen, theme.font(scale * 0.03), "WI-FI / SETTINGS", theme.CREAM,
+                        center=(cx, rect.y + box.centery)))
+                    continue
                 icon = (self.art.get(fr.TYPES[9], int(scale * 0.06), "whole") if mode == "classic"
                         else self.art.get(None, int(scale * 0.055), "bomb"))
                 self.layer.blit(icon, icon.get_rect(center=(box.centerx, box.y + box.h * 0.38)))
-                cx = rect.x + box.centerx
                 self.later.append(functools.partial(
                     theme.text, screen, theme.font(scale * 0.045), mode.upper(), theme.GOLD,
                     center=(cx, rect.y + box.y + int(box.h * 0.72))))
@@ -625,7 +721,7 @@ class Renderer:
                 self.later.append(functools.partial(
                     theme.text, screen, theme.font(scale * 0.028, name="arial"), sub,
                     center=(cx, rect.y + box.y + int(box.h * 0.88))))
-            self.message(screen, rect, "Hold your hand on a game to pick it", 0.58, 0.045)
+            self.message(screen, rect, "Hold your hand on a game to pick it", 0.68, 0.045)
         elif st == "ready":
             self.message(screen, rect, game.mode.upper(), 0.12, 0.08, theme.GOLD)
             self.message(screen, rect, "Raise both hands above your head to start!", 0.75, 0.05)
@@ -666,7 +762,7 @@ class Renderer:
             pygame.draw.line(self.layer, color, to_layer(cx + side * 0.06, 0.55),
                              to_layer(cx + side * 0.08, 0.93), w)
 
-    def draw_panels(self, screen, game, tracker, rect, fps):
+    def draw_panels(self, screen, game, tracker, rect, fps, hint=None):
         left, right = theme.panels(screen.get_size(), rect)
         lh, rh = game.hands
         if left:
@@ -699,8 +795,9 @@ class Renderer:
             if game.mode == "classic" and game.state in ("play", "over"):
                 theme.text(screen, theme.font(right.w * 0.08, name="arial"), f"missed {game.missed}",
                            midtop=(right.centerx, right.y + right.h * 0.45))
-            hint = {"calibrate": "Stand in the middle", "menu": "Pick a game", "ready": "Hands up!",
-                    "countdown": "Get ready...", "play": "Slice!", "boom": "Ouch!", "over": "Well done!"}[game.state]
+            hint = hint or {"calibrate": "Stand in the middle", "menu": "Pick a game", "ready": "Hands up!",
+                            "countdown": "Get ready...", "play": "Slice!", "boom": "Ouch!",
+                            "over": "Well done!"}[game.state]
             theme.text(screen, theme.font(right.w * 0.11), hint, theme.CREAM, midtop=(right.centerx, right.y + right.h * 0.58))
             if self.show_debug:
                 f = theme.font(max(11, right.w // 22), bold=False, name="consolas")
@@ -765,6 +862,10 @@ def main():
     tracker = pl.PoseTracker(cfg)
     game = Game(cfg, load_scores())
     renderer = Renderer(cfg)
+    net = Network(cfg["network"]["backend"])
+    setup = Setup(cfg, net)
+    if net.available and cfg["network"]["show_at_startup"]:
+        setup.open()
     sounds = make_sounds()
     clock = pygame.time.Clock()
     last_seq = 0
@@ -772,34 +873,52 @@ def main():
     try:
         running = True
         while running:
-            for event in pygame.event.get():
+            events = pygame.event.get()
+            for event in events:
                 if event.type == pygame.QUIT:
                     running = False
-                elif event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_ESCAPE:
-                        running = False
-                    elif event.key == pygame.K_r:
-                        tracker.cycle_rotation()
-                    elif event.key == pygame.K_s:
-                        renderer.show_skeleton = not renderer.show_skeleton
-                    elif event.key == pygame.K_d:
-                        renderer.show_debug = not renderer.show_debug
-                    elif event.key == pygame.K_f:
-                        fullscreen = not fullscreen
-                        screen = set_mode()
+                elif event.type != pygame.KEYDOWN:
+                    continue
+                # Quit is Ctrl+Q only: a remote's Back button sends Esc, which must not end the console.
+                elif event.key == pygame.K_q and event.mod & pygame.KMOD_CTRL:
+                    running = False
+                elif setup.active:
+                    continue  # the setup screens use the keys themselves (typing a password)
+                elif event.key == pygame.K_r:
+                    tracker.cycle_rotation()
+                elif event.key == pygame.K_s:
+                    renderer.show_skeleton = not renderer.show_skeleton
+                elif event.key == pygame.K_d:
+                    renderer.show_debug = not renderer.show_debug
+                elif event.key == pygame.K_f:
+                    fullscreen = not fullscreen
+                    screen = set_mode()
+                else:
+                    game.press(event.key)
 
             seq, frame, kp, t_pose = tracker.latest()
             fresh = seq != last_seq
             last_seq = seq
-            rect = camera_rect(frame, screen)
+            rect, view = layout(frame, screen, cfg)
             game.rotation_locked = tracker.rotation_locked
-            game.update(kp, fresh, t_pose, time.perf_counter(), rect.w / rect.h)
+            now = time.perf_counter()
+            if setup.active:
+                dt = game.track(kp, fresh, t_pose, now, view)
+                hands_px = [(int(rect.x + u * rect.w), int(rect.y + v * rect.h)) for u, v in game.pointers()]
+                setup.update(rect, hands_px, events, dt)
+            else:
+                game.update(kp, fresh, t_pose, now, view)
+                if game.want_settings:
+                    game.want_settings = False
+                    if net.available:
+                        setup.open()
             for name in game.sounds:
                 if name in sounds:
                     sounds[name].play()
             game.sounds.clear()
 
-            renderer.draw(screen, game, tracker, frame, fresh, kp, clock.get_fps())
+            renderer.draw(screen, game, tracker, frame, fresh, kp, clock.get_fps(), rect, view,
+                          overlay=setup if setup.active else None)
             pygame.display.flip()
             clock.tick(60)
     finally:

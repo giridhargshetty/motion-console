@@ -14,13 +14,23 @@ CREAM = (255, 240, 205)
 INK = (25, 14, 8)
 
 
+# Windows font first, then what Ubuntu has (fonts-dejavu-core, installed by deploy/linux/setup.sh).
+FALLBACKS = {
+    "impact": "impact,dejavusanscondensed,dejavusans",
+    "arial": "arial,dejavusans",
+    "consolas": "consolas,dejavusansmono",
+}
+
+
 def font(size, bold=True, name="impact"):
-    return _font(max(10, int(size)), bold and name != "impact", name)
+    # Impact is already heavy; the Linux stand-in needs bold to look similar.
+    bold = bold and (name != "impact" or "impact" not in pygame.font.get_fonts())
+    return _font(max(10, int(size)), bold, FALLBACKS.get(name, name))
 
 
 @functools.cache
-def _font(size, bold, name):
-    return pygame.font.SysFont(name, size, bold=bold)
+def _font(size, bold, names):
+    return pygame.font.SysFont(names, size, bold=bold)
 
 
 def text(screen, f, msg, color=CREAM, outline=2, **anchor):
