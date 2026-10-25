@@ -72,6 +72,16 @@ def make_landmarker(model, mode, num_poses=1):
     ))
 
 
+def is_upright(lm):
+    """A standing person: nose above shoulders above hips, and the torso near vertical.
+    (Head-above-hips alone let a sideways body pass when the pose fit was poor.)"""
+    def mid(a, b):
+        return (lm[a].x + lm[b].x) / 2, (lm[a].y + lm[b].y) / 2
+    sx, sy = mid(L_SHOULDER, R_SHOULDER)
+    hx, hy = mid(L_HIP, R_HIP)
+    return lm[NOSE].y < sy < hy and (hy - sy) > 1.5 * abs(hx - sx)
+
+
 def content_box(frame, threshold=20):
     """Bounding box (x0, y0, x1, y1) of the non-black part of the frame, or None."""
     brightest = frame.max(axis=2)
@@ -318,6 +328,7 @@ class PoseTracker:
         self.landmarker = make_landmarker(self.model, vision.RunningMode.VIDEO, self._people)
         self._probe = make_landmarker("lite", vision.RunningMode.IMAGE) if self.auto_rotate else None
         self._votes = []
+        self.recheck_rotation = False  # the game sets this on the calibration screen
         self._box = None
         self._box_age = 0
         self.pose_ms = 0.0
@@ -341,6 +352,7 @@ class PoseTracker:
         """Manual override (R key): stops auto-rotation."""
         self.rotate = (self.rotate + 90) % 360
         self.rotation_locked = True
+        self.auto_rotate = False
         return self.rotate
 
     def _run(self):
@@ -360,7 +372,8 @@ class PoseTracker:
                 self.landmarker.close()
                 self.landmarker = make_landmarker(self.model, vision.RunningMode.VIDEO, want)
                 self._people = want
-            if not self.rotation_locked and n % 10 == 0:
+            if self.auto_rotate and (not self.rotation_locked and n % 10 == 0
+                                     or self.recheck_rotation and n % 30 == 0):
                 self._probe_rotation(frame)
             n += 1
             if ROTATIONS[self.rotate] is not None:
@@ -406,22 +419,26 @@ class PoseTracker:
                                               data=cv2.cvtColor(img, cv2.COLOR_BGR2RGB)))
             if not res.pose_landmarks:
                 continue
-            lm = res.pose_landmarks[0]
-            shoulder_y = (lm[L_SHOULDER].y + lm[R_SHOULDER].y) / 2
-            hip_y = (lm[L_HIP].y + lm[R_HIP].y) / 2
-            if not lm[NOSE].y < shoulder_y < hip_y:
-                continue
-            score = sum(lm[i].visibility for i in (NOSE, L_SHOULDER, R_SHOULDER, L_HIP, R_HIP)) / 5
-            if score > best_score:
-                best, best_score = deg, score
-        if best is None or best_score < 0.6:
+            if is_upright(res.pose_landmarks[0]):
+                lm = res.pose_landmarks[0]
+                score = sum(lm[i].visibility for i in (NOSE, L_SHOULDER, R_SHOULDER, L_HIP, R_HIP)) / 5
+                if score > best_score:
+                    best, best_score = deg, score
+        self._vote(best if best_score >= 0.6 else None)
+
+    def _vote(self, best):
+        """One rotation check's winner (None = no upright person seen)."""
+        if best is None:
             self._votes.clear()
             return
         self._votes = (self._votes + [best])[-3:]
-        if self._votes[-2:] == [best, best]:
-            self.rotate = best  # twice in a row: show it this way up
-        if self._votes == [best] * 3:
-            self.rotation_locked = True  # three in a row: settled
+        if not self.rotation_locked:
+            if self._votes[-2:] == [best, best]:
+                self.rotate = best  # twice in a row: show it this way up
+            if self._votes == [best] * 3:
+                self.rotation_locked = True  # three in a row: settled
+        elif self._votes == [best] * 3 and best != self.rotate:
+            self.rotate = best  # re-check on the calibration screen: the phone was turned
 
     def close(self):
         self._running = False

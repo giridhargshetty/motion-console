@@ -1144,6 +1144,7 @@ def main():
             rect, view = layout(frame, screen, cfg)
             game.rotation_locked = tracker.rotation_locked
             tracker.want_people = game.want_people
+            tracker.recheck_rotation = game.state == "calibrate"  # follow the phone if it was turned
             now = time.perf_counter()
             if setup.active:
                 dt = game.track(people, fresh, t_pose, now, view)
