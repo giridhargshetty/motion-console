@@ -24,3 +24,6 @@ prototype/highscores.json
 # Per-machine settings and console logs
 prototype/config.local.toml
 logs/
+
+# Raw Mixamo downloads: royalty-free to use, not to redistribute (only rendered PNGs are committed)
+assets/source/
