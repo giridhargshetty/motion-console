@@ -97,7 +97,12 @@ def canonical_key(stem):
 # -------------------------------------------------------------- scene setup
 
 def reset_scene():
-    bpy.ops.wm.read_factory_settings(use_empty=True)
+    """Empty the startup scene. (read_factory_settings re-registers add-ons and
+    throws errors in headless Blender 5.x, so clear the data instead.)"""
+    for blocks in (bpy.data.objects, bpy.data.meshes, bpy.data.materials, bpy.data.cameras,
+                   bpy.data.lights, bpy.data.armatures, bpy.data.actions, bpy.data.worlds):
+        for block in list(blocks):
+            blocks.remove(block)
 
 
 def import_fbx(path):
@@ -210,7 +215,8 @@ def facing_direction(arm):
 
 def make_material(name, rgb, roughness=0.35):
     mat = bpy.data.materials.new(name)
-    mat.use_nodes = True
+    if mat.node_tree is None:  # Blender < 5 starts materials without nodes
+        mat.use_nodes = True
     bsdf = mat.node_tree.nodes.get("Principled BSDF") if mat.node_tree else None
     if bsdf:
         bsdf.inputs["Base Color"].default_value = (*rgb, 1)
@@ -284,11 +290,11 @@ def setup_camera(lo, hi, forward, framing, size):
 
     eye_z = lo.z + 0.72 * height  # chest height: you are the other boxer
     if framing == "full":
-        span = height * 1.25      # whole body plus room for a knockout fall
-        aim_z = lo.z + 0.5 * height
+        span = height * 1.5       # whole body, gloves raised overhead, knockout fall
+        aim_z = lo.z + 0.6 * height
     else:
-        span = height * 0.72      # waist up
-        aim_z = lo.z + 0.68 * height
+        span = height * 0.9       # waist up, still room for raised gloves
+        aim_z = lo.z + 0.75 * height
     fov = 2 * math.atan(cam_data.sensor_height / (2 * cam_data.lens))
     dist = (span / 2) / math.tan(fov / 2)
 
@@ -322,16 +328,17 @@ def setup_lights(lo, hi, forward):
         obj.rotation_euler = (mid - pos).to_track_quat("-Z", "Y").to_euler()
 
     s = height  # light power scales with how big the import came in
-    light("Key", "AREA", 400 * s * s, mid + (forward + side * 0.8) * 2.5 * s + Vector((0, 0, s)), 2 * s)
-    light("Fill", "AREA", 150 * s * s, mid + (forward - side) * 2.5 * s, 2 * s)
-    light("Rim", "AREA", 300 * s * s, mid - forward * 2.5 * s + Vector((0, 0, 1.2 * s)), s)
+    light("Key", "AREA", 120 * s * s, mid + (forward + side * 0.8) * 2.5 * s + Vector((0, 0, s)), 2 * s)
+    light("Fill", "AREA", 40 * s * s, mid + (forward - side) * 2.5 * s, 2 * s)
+    light("Rim", "AREA", 100 * s * s, mid - forward * 2.5 * s + Vector((0, 0, 1.2 * s)), s)
 
     world = bpy.data.worlds.new("World")
-    world.use_nodes = True
+    if world.node_tree is None:
+        world.use_nodes = True
     bg = world.node_tree.nodes.get("Background") if world.node_tree else None
     if bg:
         bg.inputs["Color"].default_value = (0.35, 0.35, 0.38, 1)
-        bg.inputs["Strength"].default_value = 0.6
+        bg.inputs["Strength"].default_value = 0.4
     bpy.context.scene.world = world
 
 

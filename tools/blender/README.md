@@ -131,6 +131,9 @@ Repeat with `contender` and `champ`. Each character takes a few minutes. Options
 | `--engine eevee` | eevee | `cycles` (slower, works without a GPU) or `workbench` (flat, fastest) |
 | `--only jab,hook` | all | Re-render just these; the rest of meta.json is kept |
 
+Blender 5.2 prints a red `ImportError ... remote_library` traceback when it
+starts. That's Blender's own bug and harmless; ignore it.
+
 It prints which file became which key, warns about missing ones, and ends with
 the total size. Aim for roughly **5–7 MB per character** because the frames are
 committed to git; if it's bigger, use `--fps 12`.
