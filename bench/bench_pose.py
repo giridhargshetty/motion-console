@@ -3,9 +3,9 @@ Phase 0 benchmark: how fast can this machine track one player with MediaPipe Pos
 
 Usage (Windows, PowerShell):
     py -3.12 -m venv .venv; .venv\Scripts\pip install -r requirements.txt
-    .venv\Scripts\python bench\bench_pose.py --list                 # find your camera index
-    .venv\Scripts\python bench\bench_pose.py --cam 1 --model lite   # run the benchmark
-    .venv\Scripts\python bench\bench_pose.py --cam 1 --model full
+    .venv\Scripts\python bench\bench_pose.py --list   # find your camera index and backend
+    .venv\Scripts\python bench\bench_pose.py --backend msmf --cam 1 --model lite   # DroidCam
+    .venv\Scripts\python bench\bench_pose.py --backend msmf --cam 1 --model full
 
 Keys while running:  q = quit and print summary,  f = toggle fullscreen
 
@@ -47,8 +47,10 @@ BONES = [
 RIGHT_WRIST = 16
 
 
-# DirectShow opens fast on Windows; let OpenCV pick the backend elsewhere (Linux in Phase 4)
-CAP_BACKEND = cv2.CAP_DSHOW if os.name == "nt" else cv2.CAP_ANY
+# DirectShow opens fast on Windows; let OpenCV pick the backend elsewhere (Linux in Phase 4).
+# DroidCam 7's virtual webcam is only visible to OpenCV through Media Foundation: use --backend msmf.
+BACKENDS = {"dshow": cv2.CAP_DSHOW, "msmf": cv2.CAP_MSMF, "any": cv2.CAP_ANY}
+DEFAULT_BACKEND = "dshow" if os.name == "nt" else "any"
 
 
 def get_model(name):
@@ -59,8 +61,8 @@ def get_model(name):
     return str(path)
 
 
-def open_camera(index, width, height):
-    cap = cv2.VideoCapture(index, CAP_BACKEND)
+def open_camera(index, width, height, backend):
+    cap = cv2.VideoCapture(index, BACKENDS[backend])
     cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
@@ -70,13 +72,15 @@ def open_camera(index, width, height):
 
 
 def list_cameras():
-    for i in range(6):
-        cap = cv2.VideoCapture(i, CAP_BACKEND)
-        ok, frame = cap.read()
-        if ok:
-            h, w = frame.shape[:2]
-            print(f"  camera {i}: {w}x{h}")
-        cap.release()
+    backends = ["dshow", "msmf"] if os.name == "nt" else ["any"]
+    for name in backends:
+        for i in range(6):
+            cap = cv2.VideoCapture(i, BACKENDS[name])
+            ok, frame = cap.read()
+            if ok:
+                h, w = frame.shape[:2]
+                print(f"  --backend {name} --cam {i}: {w}x{h}")
+            cap.release()
 
 
 def main():
@@ -85,6 +89,7 @@ def main():
     ap.add_argument("--model", choices=MODEL_URLS.keys(), default="lite")
     ap.add_argument("--width", type=int, default=640)
     ap.add_argument("--height", type=int, default=480)
+    ap.add_argument("--backend", choices=BACKENDS.keys(), default=DEFAULT_BACKEND)
     ap.add_argument("--list", action="store_true", help="list cameras and exit")
     args = ap.parse_args()
 
@@ -98,7 +103,7 @@ def main():
         num_poses=1,
     )
     landmarker = vision.PoseLandmarker.create_from_options(options)
-    cap = open_camera(args.cam, args.width, args.height)
+    cap = open_camera(args.cam, args.width, args.height, args.backend)
     if not cap.isOpened():
         raise SystemExit(f"Could not open camera {args.cam}. Try --list.")
 
@@ -163,7 +168,7 @@ def main():
     loop_fps = len(steady) / sum(steady)
     p95 = statistics.quantiles(pose_ms[10:], n=20)[18]
     print("\n=== Phase 0 result ===")
-    print(f"camera index      : {args.cam}  ({args.width}x{args.height} requested)")
+    print(f"camera index      : {args.cam} via {args.backend}  ({args.width}x{args.height} requested)")
     print(f"model             : {args.model}")
     print(f"frames            : {frames}")
     print(f"loop fps          : {loop_fps:.1f}   (gate: >= 30)")
