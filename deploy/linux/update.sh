@@ -14,6 +14,6 @@ if pgrep -f "deploy/linux/[c]onsole.sh" >/dev/null; then
     pkill -f "[.]venv/bin/python $REPO_DIR/prototype/fruit_slice.py" || true
     echo "game restarting with $(git log --oneline -1)"
 else
-    pkill -t tty1 -u "$(id -un)" || true  # tty1 auto-login starts the console again
+    pkill -HUP -t tty1 -u "$(id -un)" || true  # hang up the tty1 shell: auto-login starts the console again
     echo "console restarting with $(git log --oneline -1)"
 fi
