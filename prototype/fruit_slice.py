@@ -150,6 +150,7 @@ class Game:
         self.mode = None
         self.hover = {"classic": 0.0, "survival": 0.0, "players": 0.0, "settings": 0.0, "one": 0.0, "two": 0.0}
         self.want_settings = False
+        self.just_calibrated = False
         self.calib_ok, self.calib_msg = False, ""
         self.t = self.last_t = 0.0
         self.view = View()
@@ -376,6 +377,7 @@ class Game:
         if self.hold >= self.cfg["calibrate"]["hold_seconds"]:
             self.goto("players")
             self.sounds.append("ok")
+            self.just_calibrated = True  # the main loop saves the camera rotation
 
     def _players(self, fresh, dt, gone):
         if gone > self.cfg["calibrate"]["lost_seconds"]:
@@ -1227,6 +1229,9 @@ def main():
                 setup.update(rect, hands_px, events, dt)
             else:
                 game.update(people, fresh, t_pose, now, view)
+                if game.just_calibrated:  # the picture is right: start this way up next time
+                    game.just_calibrated = False
+                    tracker.remember_rotation()
                 if game.want_settings:
                     game.want_settings = False
                     if net.available:

@@ -11,6 +11,7 @@ way up the camera is by checking which rotation shows an upright person.
 Phase 2 moves this into pose_service.
 """
 
+import json
 import os
 import shutil
 import socket
@@ -72,14 +73,44 @@ def make_landmarker(model, mode, num_poses=1):
     ))
 
 
-def is_upright(lm):
-    """A standing person: nose above shoulders above hips, and the torso near vertical.
-    (Head-above-hips alone let a sideways body pass when the pose fit was poor.)"""
+ROTATION_FILE = MODEL_DIR.parent / "logs" / "camera_rotation.json"  # logs/ is not in git
+
+
+def load_rotation(path=ROTATION_FILE):
+    try:
+        deg = json.loads(Path(path).read_text())["rotate"]
+        return deg if deg in ROTATIONS else None
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+def save_rotation(deg, path=ROTATION_FILE):
+    try:
+        Path(path).parent.mkdir(exist_ok=True)
+        Path(path).write_text(json.dumps({"rotate": deg}))
+    except OSError:
+        pass
+
+
+def is_upright(lm, min_vis=0.5, min_torso=0.08):
+    """A clearly visible STANDING person, as the rotation check needs (coordinates 0..1 of the image):
+      - shoulders, hips and knees seen; nose above shoulders above hips above knees
+      - torso near vertical, and not tiny (people far away are often mis-fitted)
+      - thighs pointing down: a seated person's knees sit near hip height
+    A loose check (just head above hips) let people sitting on a sofa, or a poor fit of a
+    sideways body, pick the wrong rotation."""
     def mid(a, b):
         return (lm[a].x + lm[b].x) / 2, (lm[a].y + lm[b].y) / 2
+    if min(lm[i].visibility for i in (L_SHOULDER, R_SHOULDER, L_HIP, R_HIP, L_KNEE, R_KNEE)) < min_vis:
+        return False
     sx, sy = mid(L_SHOULDER, R_SHOULDER)
     hx, hy = mid(L_HIP, R_HIP)
-    return lm[NOSE].y < sy < hy and (hy - sy) > 1.5 * abs(hx - sx)
+    kx, ky = mid(L_KNEE, R_KNEE)
+    torso = hy - sy
+    thigh = ky - hy
+    return (lm[NOSE].y < sy < hy < ky
+            and torso >= min_torso and torso > 1.5 * abs(hx - sx)
+            and thigh > 0.5 * torso and thigh > 1.2 * abs(kx - hx))
 
 
 def content_box(frame, threshold=20):
@@ -318,6 +349,10 @@ class PoseTracker:
         self.auto_rotate = cam["rotate"] == "auto"
         self.rotate = 0 if self.auto_rotate else int(cam["rotate"])
         self.rotation_locked = not self.auto_rotate
+        if self.auto_rotate and (saved := load_rotation()) is not None:
+            # Start the right way up from the last successful calibration; the calibration
+            # screen still re-checks, in case the phone was turned since.
+            self.rotate, self.rotation_locked = saved, True
         self.mirror = cam["mirror"]
         self.crop_bars = cam["crop_bars"]
         self.camera = open_camera(cam)
@@ -347,6 +382,11 @@ class PoseTracker:
     def get_player(self):
         people = self.latest()[2]
         return people[0] if people else None
+
+    def remember_rotation(self):
+        """Called when calibration succeeds: the picture is right, so start this way next time."""
+        if self.auto_rotate:
+            save_rotation(self.rotate)
 
     def cycle_rotation(self):
         """Manual override (R key): stops auto-rotation."""
