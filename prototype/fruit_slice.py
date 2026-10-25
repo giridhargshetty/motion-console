@@ -132,6 +132,8 @@ class Player:
         self.torso = None
         self.score = 0
         self.cut_times = []
+        self.lives = 0          # survival: bombs this player can still survive
+        self.safe_until = 0.0   # just hit a bomb: can't be hit again until then
 
 
 class Game:
@@ -440,6 +442,7 @@ class Game:
         self.sounds.append("go")
         for p in self.players:
             p.score, p.cut_times = 0, []
+            p.lives, p.safe_until = self.cfg["survival"].get("lives", 1), 0.0
         self.missed = 0
         self.new_best = False
         self.winner = self.loser = None
@@ -553,8 +556,10 @@ class Game:
                     continue
                 a, b = hand.segment
                 for bomb in self.bombs:
-                    if seg_dist((bomb.x, bomb.y), a, b) <= bomb.r + s["hit_margin"] * 0.5:
-                        return self.explode(bomb, p)
+                    if self.t >= p.safe_until and seg_dist((bomb.x, bomb.y), a, b) <= bomb.r + s["hit_margin"] * 0.5:
+                        if self.explode(bomb, p):
+                            return
+                        break
                 hit = [f for f in self.fruits if seg_dist((f.x, f.y), a, b) <= f.r + s["hit_margin"]]
                 if hit:
                     self.fx.slash(a, b)
@@ -588,11 +593,21 @@ class Game:
             self.sounds.append("combo")
 
     def explode(self, bomb, p):
+        """A bomb sliced: lose a life; the last life ends the game. Returns True when it did."""
         self.bombs.remove(bomb)
-        self.loser = p.idx
         self.fx.explosion(bomb.x, bomb.y)
         self.sounds.append("boom")
-        self.goto("boom")
+        p.lives -= 1
+        if p.lives <= 0:
+            self.loser = p.idx
+            self.goto("boom")
+            return True
+        self.fx.flash = min(self.fx.flash, 0.5)  # a lighter flash: the game goes on
+        p.safe_until = self.t + self.cfg["survival"].get("safe_seconds", 1.0)
+        who = f"{p.name}: " if self.two_player else ""
+        left = f"{p.lives} {'life' if p.lives == 1 else 'lives'} left"
+        self.fx.popup(self.aspect / 2, 0.3, who + left, (255, 110, 90), "big", 1.2)
+        return False
 
 
 # ---------------------------------------------------------------- sound
@@ -870,6 +885,20 @@ class Renderer:
                 center=(box.centerx, int(box.y + box.h * (0.8 + 0.1 * i))))
         return box
 
+    @staticmethod
+    def draw_hearts(screen, cx, cy, lives, total, size):
+        """Survival lives: full red hearts for lives left, dark ones for lives lost."""
+        gap = size * 1.25
+        x = cx - gap * (total - 1) / 2
+        for i in range(total):
+            color = (235, 50, 60) if i < lives else (70, 45, 40)
+            r = size * 0.3
+            hx = x + i * gap
+            for dx in (-r, r):
+                pygame.draw.circle(screen, color, (hx + dx * 0.95, cy - r * 0.4), r)
+            pygame.draw.polygon(screen, color, [(hx - 2 * r, cy - r * 0.2), (hx + 2 * r, cy - r * 0.2),
+                                                (hx, cy + r * 1.9)])
+
     def wifi_icon(self, cx, cy, size, color=theme.CREAM):
         base = (cx, cy + size * 0.4)
         for k in (0.35, 0.65, 0.95):
@@ -960,7 +989,8 @@ class Renderer:
                             ["60 seconds", "most fruit wins" if versus else f"best {game.best['classic']}"],
                             art(fr.TYPES[9], "whole"))
             self.choice_box(screen, rect, game, "survival", zones["survival"], to_layer, scale, "SURVIVAL",
-                            ["don't slice bombs!", "last one wins" if versus else f"best {game.best['survival']}"],
+                            [f"{self.cfg['survival'].get('lives', 1)} lives - avoid bombs!",
+                             "last one standing wins" if versus else f"best {game.best['survival']}"],
                             art(None, "bomb"))
             self.choice_box(screen, rect, game, "players", zones["players"], to_layer, scale,
                             f"{game.n_players} PLAYER{'S' if versus else ''}", icon=people, compact=True,
@@ -1044,6 +1074,7 @@ class Renderer:
         left, right = theme.panels(screen.get_size(), rect)
         lh, rh = game.players[0].hands
         versus = game.two_player and game.state in ("countdown", "play", "boom", "over")
+        lives_total = self.cfg["survival"].get("lives", 1)
         if left:
             y = left.y + 30
             for line in ("FRUIT", "SLICE"):
@@ -1068,6 +1099,9 @@ class Renderer:
             if game.mode and not pre_game:
                 theme.text(screen, theme.font(left.w * 0.07, name="arial"), f"BEST  {game.best[game.mode]}",
                            midtop=(left.centerx, left.y + left.h * 0.88))
+            if game.mode == "survival" and not pre_game and game.state != "ready" and lives_total > 1:
+                self.draw_hearts(screen, left.centerx, left.y + left.h * 0.8, game.players[0].lives,
+                                 lives_total, min(left.w / (lives_total * 1.5), left.w * 0.12))
         if right:
             if versus:
                 o = game.players[1]
@@ -1086,6 +1120,9 @@ class Renderer:
                            midtop=(right.centerx, right.y + 30))
                 theme.text(screen, theme.font(right.w * 0.3), value, color,
                            outline=3, midtop=(right.centerx, right.y + 30 + right.w * 0.12))
+            if versus and game.mode == "survival" and lives_total > 1:
+                self.draw_hearts(screen, right.centerx, right.y + 30 + right.w * 0.55, game.players[1].lives,
+                                 lives_total, min(right.w / (lives_total * 1.5), right.w * 0.12))
             if not versus and game.mode == "classic" and game.state in ("play", "over"):
                 theme.text(screen, theme.font(right.w * 0.08, name="arial"), f"missed {game.missed}",
                            midtop=(right.centerx, right.y + right.h * 0.45))

@@ -74,10 +74,12 @@ round_seconds = 60
 spawn_every = 1.3
 fruits_per_wave = [1, 3]
 
-[survival]           # fruit and bombs, gets harder until you slice a bomb
+[survival]           # fruit and bombs, gets harder; each sliced bomb costs a life
 spawn_every_start = 1.4
 spawn_every_min = 0.6
 ramp_seconds = 90    # time to reach full difficulty
 fruits_per_wave = [1, 4]
 bomb_chance_start = 0.15
 bomb_chance_max = 0.35
+lives = 5            # bombs you can slice before the game ends (each player, in 2-player)
+safe_seconds = 1.0   # after a bomb hit, no further hits for this long (one swipe = one life)
