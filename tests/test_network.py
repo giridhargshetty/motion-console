@@ -2,7 +2,14 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "prototype"))
-from network import friendly_error, parse_wifi_list, split_terse  # noqa: E402
+from network import friendly_error, parse_devices, parse_wifi_list, split_terse  # noqa: E402
+
+
+def test_parse_devices_on_a_box_without_wifi():
+    # What the Wyse 7040 reports: cable + phone tethering, no Wi-Fi adapter.
+    text = "ethernet:connected\nethernet:connected\ntun:connected (externally)\nloopback:connected (externally)\n"
+    assert parse_devices(text) == (False, True)
+    assert parse_devices("wifi:disconnected\nethernet:unavailable\n") == (True, False)
 
 
 def test_split_terse_handles_escaped_colons():

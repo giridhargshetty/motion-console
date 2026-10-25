@@ -35,6 +35,7 @@ sys.path[:0] = [str(HERE), str(HERE.parent)]  # prototype modules + pose_service
 
 import effects  # noqa: E402
 import fruits as fr  # noqa: E402
+import players  # noqa: E402
 import player as pl  # noqa: E402
 import theme  # noqa: E402
 from console_setup import Setup  # noqa: E402
@@ -116,45 +117,89 @@ class Body:
         self.age += dt
 
 
+class Player:
+    """One person: colour, hands, body size and score. Slot 0 = BLUE, slot 1 = ORANGE."""
+
+    def __init__(self, cfg, idx):
+        self.idx = idx
+        self.name, self.glow, self.core = players.COLORS[idx]
+        self.hands = [Hand(cfg, pl.L_WRIST, pl.L_PINKY, pl.L_INDEX),
+                      Hand(cfg, pl.R_WRIST, pl.R_PINKY, pl.R_INDEX)]
+        self.kp = None              # keypoints in the newest frame, None when not in view
+        self.last_seen = -1e9
+        self.last_x = None
+        self.torso = None
+        self.score = 0
+        self.cut_times = []
+
+
 class Game:
     """All game state and rules; no drawing. States:
-    calibrate -> menu -> ready -> countdown -> play -> (boom) -> over -> menu ..."""
+    calibrate -> menu -> ready -> countdown -> play -> (boom) -> over -> menu ...
+    One or two players: everyone in view when the round starts takes part."""
 
     def __init__(self, cfg, scores):
         self.cfg = cfg
         self.g = cfg["game"]
-        self.hands = [Hand(cfg, pl.L_WRIST, pl.L_PINKY, pl.L_INDEX),
-                      Hand(cfg, pl.R_WRIST, pl.R_PINKY, pl.R_INDEX)]
+        self.players = [Player(cfg, 0), Player(cfg, 1)][:max(1, cfg["pose"].get("max_players", 1))]
+        self.participants = [0]  # slots taking part in the current / last round
         self.best = scores
         self.state, self.state_t, self.hold = "calibrate", 0.0, 0.0
         self.mode = None
         self.hover = {"classic": 0.0, "survival": 0.0, "settings": 0.0}
         self.want_settings = False
-        self.last_kp = None
         self.calib_ok, self.calib_msg = False, ""
-        self.torso = None
         self.t = self.last_t = 0.0
-        self.last_seen = 0.0
         self.view = View()
         self.aspect = self.view.aspect
         self.rotation_locked = True  # mirrors tracker.rotation_locked, set by the main loop
         self.paused = False
-        self.score = self.missed = 0
+        self.missed = 0
         self.new_best = False
+        self.winner = self.loser = None
         self.play_time = self.round_end = self.next_wave = 0.0
-        self.cut_times = []
         self.fruits, self.bombs, self.pieces = [], [], []
         self.fx = effects.Effects()
         self.sounds = []
         self.scale = 720  # pixels per world unit, set by the renderer (for splat sizes)
+
+    # ---- who is playing ----
+
+    @property
+    def present(self):
+        return [p for p in self.players if p.kp is not None]
+
+    @property
+    def active(self):
+        return [self.players[i] for i in self.participants]
+
+    @property
+    def two_player(self):
+        return len(self.participants) == 2
+
+    @property
+    def hands(self):
+        return [h for p in self.players for h in p.hands]
+
+    @property
+    def score(self):
+        return self.players[0].score
+
+    @property
+    def torso(self):
+        return self.players[0].torso
+
+    @property
+    def last_seen(self):
+        return max(p.last_seen for p in self.players)
 
     # ---- helpers ----
 
     def goto(self, state):
         self.state, self.state_t, self.hold, self.paused = state, self.t, 0.0, False
 
-    def cut_speed(self):
-        return self.cfg["slice"]["speed"] * (self.torso or DEFAULT_TORSO)
+    def cut_speed(self, p):
+        return self.cfg["slice"]["speed"] * (p.torso or DEFAULT_TORSO)
 
     def visible(self, kp, *ids):
         mv = self.cfg["pose"]["min_visibility"]
@@ -173,19 +218,27 @@ class Game:
                                  (kp[pl.L_HIP][1] + kp[pl.R_HIP][1]) / 2)
         return math.hypot(sx - hx, sy - hy)
 
+    def calib_body(self, kp):
+        """Whole body in view at a good distance (not where they stand left/right)."""
+        c = self.cfg["calibrate"]
+        if not self.visible(kp, pl.NOSE, pl.L_SHOULDER, pl.R_SHOULDER, pl.L_HIP, pl.R_HIP):
+            return False, "step back so I can see your whole body"
+        if c["need_knees"] and not self.visible(kp, pl.L_KNEE, pl.R_KNEE):
+            return False, "step back a little - I need to see your knees"
+        torso = self.torso_length(kp)
+        if torso > c["max_torso"]:
+            return False, "step back a little"
+        if torso < c["min_torso"]:
+            return False, "come a bit closer"
+        return True, ""
+
     def calib_check(self, kp):
         c = self.cfg["calibrate"]
         if kp is None:
             return False, "Stand in front of the camera"
-        if not self.visible(kp, pl.NOSE, pl.L_SHOULDER, pl.R_SHOULDER, pl.L_HIP, pl.R_HIP):
-            return False, "Step back so I can see your whole body"
-        if c["need_knees"] and not self.visible(kp, pl.L_KNEE, pl.R_KNEE):
-            return False, "Step back a little - I need to see your knees"
-        torso = self.torso_length(kp)
-        if torso > c["max_torso"]:
-            return False, "Step back a little"
-        if torso < c["min_torso"]:
-            return False, "Come a bit closer"
+        ok, msg = self.calib_body(kp)
+        if not ok:
+            return False, msg[0].upper() + msg[1:]
         off = (kp[pl.L_HIP][0] + kp[pl.R_HIP][0]) / 2 - 0.5
         if abs(off) > c["center_tolerance"]:
             # Mirrored picture: if you appear right of centre, your left is the way to go.
@@ -193,6 +246,13 @@ class Game:
             go_left = (off > 0) == mirror
             return False, "Step to your left  <<" if go_left else "Step to your right  >>"
         return True, "Perfect! Hold still..."
+
+    def calib_two(self, present):
+        for p in present:
+            ok, msg = self.calib_body(p.kp)
+            if not ok:
+                return False, f"{p.name}: {msg}"
+        return True, "Two players! Hold still..."
 
     def menu_zones(self):
         a = self.aspect
@@ -213,34 +273,44 @@ class Game:
         Kinect-style: a box in front of the shoulders (two torso-lengths wide, from about head top
         to chest) maps to the whole play area, so every button is reachable with a raised arm,
         and arms hanging at rest are below the box and point at nothing."""
-        kp, torso = self.last_kp, self.torso
-        if kp is None or not torso or not self.visible(kp, pl.L_SHOULDER, pl.R_SHOULDER):
-            return []
-        sx, sy = self.view.world((kp[pl.L_SHOULDER][0] + kp[pl.R_SHOULDER][0]) / 2,
-                                 (kp[pl.L_SHOULDER][1] + kp[pl.R_SHOULDER][1]) / 2)
         out = []
-        for hand in self.hands:
-            if hand.pos is None:
+        for p in self.present:
+            kp, torso = p.kp, p.torso
+            if not torso or not self.visible(kp, pl.L_SHOULDER, pl.R_SHOULDER):
                 continue
-            u = (hand.pos[0] - (sx - torso)) / (2 * torso)
-            v = (hand.pos[1] - (sy - 0.9 * torso)) / (1.5 * torso)
-            if -0.1 <= u <= 1.1 and -0.15 <= v <= 1.0:
-                out.append((min(max(u, 0.0), 1.0), min(max(v, 0.0), 1.0)))
+            sx, sy = self.view.world((kp[pl.L_SHOULDER][0] + kp[pl.R_SHOULDER][0]) / 2,
+                                     (kp[pl.L_SHOULDER][1] + kp[pl.R_SHOULDER][1]) / 2)
+            for hand in p.hands:
+                if hand.pos is None:
+                    continue
+                u = (hand.pos[0] - (sx - torso)) / (2 * torso)
+                v = (hand.pos[1] - (sy - 0.9 * torso)) / (1.5 * torso)
+                if -0.1 <= u <= 1.1 and -0.15 <= v <= 1.0:
+                    out.append((min(max(u, 0.0), 1.0), min(max(v, 0.0), 1.0)))
         return out
 
-    def track(self, kp, fresh, t_pose, t, view):
-        """Follow the hands and body size only (also used while a setup screen is showing)."""
+    def track(self, people, fresh, t_pose, t, view):
+        """Match people to colour slots and follow their hands and body size
+        (also used while a setup screen is showing)."""
         dt = 0.0 if not self.last_t else min(t - self.last_t, 0.05)
         self.t, self.last_t, self.view, self.aspect = t, t, view, view.aspect
-        self.last_kp = kp
-        if fresh:
-            for hand in self.hands:
-                hand.update(kp, t_pose, view, self.cut_speed())
-            torso = self.torso_length(kp)
-            if torso:
-                self.torso = torso if self.torso is None else self.torso * 0.9 + torso * 0.1
-        if kp is not None:
-            self.last_seen = t
+        if not fresh:
+            return dt
+        # People far in the background (small torso) aren't players.
+        far = self.cfg["calibrate"]["min_torso"] * 0.75
+        people = [kp for kp in people if (self.torso_length(kp) or far) >= far][:len(self.players)]
+        recent = [p.last_x if t - p.last_seen <= players.FORGET_SECONDS else None for p in self.players]
+        slots = players.assign(recent, [players.body_x(kp) for kp in people])
+        found = dict(zip(slots, people))
+        for p in self.players:
+            p.kp = found.get(p.idx)
+            for hand in p.hands:
+                hand.update(p.kp, t_pose, view, self.cut_speed(p))
+            if p.kp is not None:
+                p.last_seen, p.last_x = t, players.body_x(p.kp)
+                torso = self.torso_length(p.kp)
+                if torso:
+                    p.torso = torso if p.torso is None else p.torso * 0.9 + torso * 0.1
         return dt
 
     def press(self, key):
@@ -250,32 +320,40 @@ class Game:
             if choice:
                 self.select(choice)
         elif self.state in ("ready", "over") and key in (pygame.K_RETURN, pygame.K_KP_ENTER):
-            if self.state == "ready" or self.t - self.state_t >= OVER_COOLDOWN:
-                self.goto("countdown" if self.state == "ready" else "menu")
-                self.sounds.append("beep" if self.state == "countdown" else "select")
+            if self.state == "ready":
+                self.participants = [p.idx for p in self.present] or [0]
+                self.goto("countdown")
+                self.sounds.append("beep")
+            elif self.t - self.state_t >= OVER_COOLDOWN:
+                self.goto("menu")
+                self.sounds.append("select")
 
-    def update(self, kp, fresh, t_pose, t, view):
-        dt = self.track(kp, fresh, t_pose, t, view)
-        gone = t - self.last_seen
+    def update(self, people, fresh, t_pose, t, view):
+        dt = self.track(people, fresh, t_pose, t, view)
+        gone = t - self.last_seen  # how long nobody at all has been in view
 
-        getattr(self, "_" + self.state)(kp, fresh, dt, gone)
+        getattr(self, "_" + self.state)(fresh, dt, gone)
 
         if not self.paused:
             # Slow motion for the flying objects only: same arcs, just slower. Frame rate unchanged.
             self.step_bodies(dt * self.g["fruit_speed"])
         self.fx.step(dt, self.g["gravity"])
 
-    def _calibrate(self, kp, fresh, dt, gone):
+    def _calibrate(self, fresh, dt, gone):
         if not self.rotation_locked:
             self.calib_ok, self.calib_msg, self.hold = False, "Finding you... stand in front of the camera", 0.0
             return
-        self.calib_ok, self.calib_msg = self.calib_check(kp)
+        present = self.present
+        if len(present) == 2:
+            self.calib_ok, self.calib_msg = self.calib_two(present)
+        else:
+            self.calib_ok, self.calib_msg = self.calib_check(present[0].kp if present else None)
         self.hold = self.hold + dt if self.calib_ok else 0.0
         if self.hold >= self.cfg["calibrate"]["hold_seconds"]:
             self.goto("menu")
             self.sounds.append("ok")
 
-    def _menu(self, kp, fresh, dt, gone):
+    def _menu(self, fresh, dt, gone):
         if gone > self.cfg["calibrate"]["lost_seconds"]:
             return self.goto("calibrate")
         for mode, (x0, y0, x1, y1) in self.menu_zones().items():
@@ -293,15 +371,18 @@ class Game:
             self.mode = choice
             self.goto("ready")
 
-    def _ready(self, kp, fresh, dt, gone):
+    def _ready(self, fresh, dt, gone):
         if gone > self.cfg["calibrate"]["lost_seconds"]:
             return self.goto("calibrate")
-        self.hold = self.hold + dt if self.hands_up(kp) else 0.0
+        present = self.present  # everyone in view must raise both hands; they all play
+        all_up = bool(present) and all(self.hands_up(p.kp) for p in present)
+        self.hold = self.hold + dt if all_up else 0.0
         if self.hold >= self.g["hands_up_seconds"]:
+            self.participants = [p.idx for p in present]
             self.goto("countdown")
             self.sounds.append("beep")
 
-    def _countdown(self, kp, fresh, dt, gone):
+    def _countdown(self, fresh, dt, gone):
         n = self.g["countdown_seconds"]
         elapsed = self.t - self.state_t
         if int(elapsed + dt) > int(elapsed) and elapsed + dt < n:
@@ -312,21 +393,24 @@ class Game:
     def start_round(self):
         self.goto("play")
         self.sounds.append("go")
-        self.score = self.missed = 0
+        for p in self.players:
+            p.score, p.cut_times = 0, []
+        self.missed = 0
         self.new_best = False
+        self.winner = self.loser = None
         self.play_time = 0.0
         self.round_end = self.t + self.cfg["classic"]["round_seconds"]
         self.next_wave = self.t + 0.3
-        self.cut_times = []
         self.fruits, self.bombs, self.pieces = [], [], []
         self.fx.popup(self.aspect / 2, 0.45, "GO!", (120, 255, 140), "huge", 0.7)
 
-    def _play(self, kp, fresh, dt, gone):
-        self.paused = kp is None
-        if self.paused:  # stop the clock while the player is out of view
+    def _play(self, fresh, dt, gone):
+        missing = [p for p in self.active if p.kp is None]
+        self.paused = bool(missing)
+        if self.paused:  # stop the clock while a player is out of view
             self.round_end += dt
             self.next_wave += dt
-            if gone > 3 * self.cfg["calibrate"]["lost_seconds"]:
+            if max(self.t - p.last_seen for p in missing) > 3 * self.cfg["calibrate"]["lost_seconds"]:
                 self.paused = False
                 self.goto("calibrate")
             return
@@ -342,15 +426,16 @@ class Game:
             fx, fy = fr.bomb_fuse_tip(b.r)
             self.fx.sparks(b.x + fx * ca + fy * sa, b.y - fx * sa + fy * ca)
 
-    def _boom(self, kp, fresh, dt, gone):
+    def _boom(self, fresh, dt, gone):
         if self.t - self.state_t >= BOOM_SECONDS:
             self.game_over()
 
-    def _over(self, kp, fresh, dt, gone):
+    def _over(self, fresh, dt, gone):
         if gone > self.cfg["calibrate"]["lost_seconds"]:
             return self.goto("calibrate")
         can = self.t - self.state_t >= OVER_COOLDOWN
-        self.hold = self.hold + dt if can and self.hands_up(kp) else 0.0
+        anyone_up = any(self.hands_up(p.kp) for p in self.present)
+        self.hold = self.hold + dt if can and anyone_up else 0.0
         if self.hold >= self.g["hands_up_seconds"]:
             self.goto("menu")
             self.sounds.append("select")
@@ -358,8 +443,11 @@ class Game:
     def game_over(self):
         self.goto("over")
         self.sounds.append("over")
-        if self.score > self.best[self.mode]:
-            self.best[self.mode] = self.score
+        if self.two_player:
+            self.winner = players.winner([p.score for p in self.players], self.loser)
+        top = max(p.score for p in self.active)
+        if top > self.best[self.mode]:
+            self.best[self.mode] = top
             self.new_best = True
             try:
                 SCORES_FILE.write_text(json.dumps(self.best))
@@ -381,7 +469,8 @@ class Game:
             every, bomb_p, count = c["spawn_every"], 0.0, c["fruits_per_wave"]
         self.next_wave = self.t + every
         weights = [k.weight for k in fr.TYPES]
-        for _ in range(random.randint(*count)):
+        extra = 1 if self.two_player else 0  # a little more fruit to share between two
+        for _ in range(random.randint(count[0], count[1] + extra)):
             is_bomb = random.random() < bomb_p
             kind = None if is_bomb else random.choices(fr.TYPES, weights)[0]
             r = g["fruit_radius"] * (0.95 if is_bomb else kind.size)
@@ -409,23 +498,24 @@ class Game:
 
     def check_cuts(self):
         s = self.cfg["slice"]
-        speed = self.cut_speed()
-        for hand in self.hands:
-            if hand.segment is None or hand.speed < speed:
-                continue
-            a, b = hand.segment
-            for bomb in self.bombs:
-                if seg_dist((bomb.x, bomb.y), a, b) <= bomb.r + s["hit_margin"] * 0.5:
-                    return self.explode(bomb)
-            hit = [f for f in self.fruits if seg_dist((f.x, f.y), a, b) <= f.r + s["hit_margin"]]
-            if hit:
-                self.fx.slash(a, b)
-            for f in hit:
-                self.cut(f, a, b)
+        for p in self.active:
+            speed = self.cut_speed(p)
+            for hand in p.hands:
+                if hand.segment is None or hand.speed < speed:
+                    continue
+                a, b = hand.segment
+                for bomb in self.bombs:
+                    if seg_dist((bomb.x, bomb.y), a, b) <= bomb.r + s["hit_margin"] * 0.5:
+                        return self.explode(bomb, p)
+                hit = [f for f in self.fruits if seg_dist((f.x, f.y), a, b) <= f.r + s["hit_margin"]]
+                if hit:
+                    self.fx.slash(a, b)
+                for f in hit:
+                    self.cut(f, a, b, p)
 
-    def cut(self, f, a, b):
+    def cut(self, f, a, b, p):
         self.fruits.remove(f)
-        self.score += f.kind.points
+        p.score += f.kind.points
         dx, dy = b[0] - a[0], b[1] - a[1]
         n = math.hypot(dx, dy) or 1.0
         nx, ny = -dy / n, dx / n  # halves fly apart across the cut line
@@ -437,18 +527,21 @@ class Game:
             self.pieces[-1].spin = side * random.uniform(90, 200)
         self.fx.juice(f.x, f.y, f.kind.juice, dx / n, dy / n)
         self.fx.splat(f.x, f.y, f.kind.juice, f.r, self.scale)
-        self.fx.popup(f.x, f.y, f"+{f.kind.points}")
+        self.fx.popup(f.x, f.y, f"+{f.kind.points}", p.glow if self.two_player else (255, 255, 140))
         self.sounds.append("slice")
 
         window = self.cfg["slice"]["combo_seconds"]
-        self.cut_times = [ct for ct in self.cut_times if self.t - ct <= window] + [self.t]
-        if len(self.cut_times) >= 3:
-            self.score += 1
-            self.fx.popup(self.aspect / 2, 0.25, f"COMBO x{len(self.cut_times)}!", (255, 120, 220), "big", 1.0)
+        p.cut_times = [ct for ct in p.cut_times if self.t - ct <= window] + [self.t]
+        if len(p.cut_times) >= 3:
+            p.score += 1
+            who = f"{p.name} " if self.two_player else ""
+            self.fx.popup(self.aspect / 2, 0.25, f"{who}COMBO x{len(p.cut_times)}!",
+                          p.glow if self.two_player else (255, 120, 220), "big", 1.0)
             self.sounds.append("combo")
 
-    def explode(self, bomb):
+    def explode(self, bomb, p):
         self.bombs.remove(bomb)
+        self.loser = p.idx
         self.fx.explosion(bomb.x, bomb.y)
         self.sounds.append("boom")
         self.goto("boom")
@@ -532,7 +625,11 @@ def layout(frame, screen, cfg):
     sw, sh = screen.get_size()
     margin = theme.frame_thickness(sh) + max(10, sh // 50)
     fh, fw = frame.shape[:2] if frame is not None else (16, 9)
-    view = View.fit(fw / fh, g.get("play_aspect", 0), g.get("crop_top_share", 0.4))
+    # Portrait camera: widen to at least play_aspect. Landscape camera (two players): keep nearly
+    # the full width, but at most max_play_aspect so the side panels (scores) still fit.
+    frame_aspect = fw / fh
+    target = min(max(frame_aspect, g.get("play_aspect", 0) or frame_aspect), g.get("max_play_aspect", 99))
+    view = View.fit(frame_aspect, target, g.get("crop_top_share", 0.4))
     s = min((sw - 2 * margin) / view.aspect, sh - 2 * margin)
     w, h = int(view.aspect * s), int(s)
     return pygame.Rect((sw - w) // 2, (sh - h) // 2, w, h), view
@@ -558,7 +655,7 @@ class Renderer:
         base = {"mid": h / 14, "big": h / 10, "huge": h / 5}[size]
         return theme.font(int(base * (0.5 + 0.5 * grow)))
 
-    def draw(self, screen, game, tracker, frame, fresh, kp, fps, rect, view, overlay=None):
+    def draw(self, screen, game, tracker, frame, fresh, people, fps, rect, view, overlay=None):
         """overlay: a setup screen (Wi-Fi etc.) drawn in the play area instead of the game."""
         self.rect = rect
         key = (screen.get_size(), tuple(rect))
@@ -603,7 +700,8 @@ class Renderer:
         if game.state not in ("play", "boom"):
             screen.blit(self.dim, rect)
         if self.show_skeleton or game.state == "calibrate":
-            self.draw_skeleton(screen, kp, view, to_px)
+            for p in game.players:
+                self.draw_skeleton(screen, p.kp, view, to_px, p.glow if len(game.present) > 1 else (120, 255, 170))
 
         game.fx.draw_back(screen, to_px)
         for p in game.pieces:
@@ -635,6 +733,22 @@ class Renderer:
         screen.set_clip(None)
 
         self.draw_panels(screen, game, tracker, rect, fps)
+        if theme.panels(screen.get_size(), rect)[0] is None:
+            self.draw_corner_scores(screen, game, rect)
+
+    @staticmethod
+    def draw_corner_scores(screen, game, rect):
+        """Scores in the play area's top corners, for screens too narrow for the side panels."""
+        if game.state not in ("countdown", "play", "boom", "over"):
+            return
+        f = theme.font(rect.h * 0.06)
+        b = game.players[0]
+        if game.two_player:
+            o = game.players[1]
+            theme.text(screen, f, f"{b.name} {b.score}", b.glow, topleft=(rect.x + 14, rect.y + 10))
+            theme.text(screen, f, f"{o.name} {o.score}", o.glow, topright=(rect.right - 14, rect.y + 10))
+        else:
+            theme.text(screen, f, f"SCORE {b.score}", theme.GOLD, topleft=(rect.x + 14, rect.y + 10))
 
     @staticmethod
     def blit_rotated(screen, surf, body, to_px):
@@ -642,28 +756,32 @@ class Renderer:
         screen.blit(surf, surf.get_rect(center=to_px(body.x, body.y)))
 
     @staticmethod
-    def draw_skeleton(screen, kp, view, to_px):
+    def draw_skeleton(screen, kp, view, to_px, color):
         if kp is None:
             return
         for a, b in pl.BONES:
             if kp[a][2] > 0.4 and kp[b][2] > 0.4:
-                pygame.draw.line(screen, (120, 255, 170), to_px(*view.world(kp[a][0], kp[a][1])),
+                pygame.draw.line(screen, color, to_px(*view.world(kp[a][0], kp[a][1])),
                                  to_px(*view.world(kp[b][0], kp[b][1])), 3)
 
     def draw_blades(self, game, to_layer, scale):
-        """Glowing blade trail: wide faint glow under a thin bright core, tapering with age."""
-        for hand in game.hands:
+        """Glowing blade trail: wide faint glow under a thin bright core, tapering with age.
+        Each player's blade has their colour once two are in view."""
+        two = len(game.present) > 1 or game.two_player
+        for p, hand in ((p, h) for p in game.players for h in p.hands):
+            glow, core = (p.glow, p.core) if two else ((90, 200, 255), (240, 252, 255))
             pts = hand.trail
             for (p0, t0, fast), (p1, _, _) in zip(pts, pts[1:]):
                 life = max(0.0, 1 - (game.t - t0) / hand.trail_seconds)
                 w = max(2, int(scale * 0.03 * life))
                 if fast:
-                    pygame.draw.line(self.layer, (90, 200, 255, int(110 * life)), to_layer(*p0), to_layer(*p1), w * 3)
-                    pygame.draw.line(self.layer, (240, 252, 255, int(255 * life)), to_layer(*p0), to_layer(*p1), w)
+                    pygame.draw.line(self.layer, (*glow, int(110 * life)), to_layer(*p0), to_layer(*p1), w * 3)
+                    pygame.draw.line(self.layer, (*core, int(255 * life)), to_layer(*p0), to_layer(*p1), w)
                 else:
                     pygame.draw.line(self.layer, (255, 255, 255, int(90 * life)), to_layer(*p0), to_layer(*p1), w)
             if hand.pos is not None:
-                pygame.draw.circle(self.layer, (255, 255, 255, 200), to_layer(*hand.pos), int(scale * 0.028), 3)
+                pygame.draw.circle(self.layer, (*(glow if two else (255, 255, 255)), 220),
+                                   to_layer(*hand.pos), int(scale * 0.028), 4 if two else 3)
 
     def ring(self, center, radius, frac, color=(255, 215, 80), width=8):
         box = pygame.Rect(0, 0, 2 * radius, 2 * radius)
@@ -689,11 +807,14 @@ class Renderer:
             return
         if st == "calibrate":
             color = ((120, 255, 140) if game.calib_ok else (255, 200, 80)) if game.rotation_locked else (220, 220, 220)
-            self.silhouette(to_layer, a, scale, (*color, 210))
-            if game.calib_ok:
-                self.ring(to_layer(a / 2, 0.15), int(scale * 0.09),
-                          game.hold / self.cfg["calibrate"]["hold_seconds"], (120, 255, 140))
-            self.message(screen, rect, "Stand in the middle", 0.04, 0.06, theme.GOLD)
+            two = len(game.present) > 1
+            spots = (0.28 * a, 0.72 * a) if two else (a / 2,)
+            for cx in spots:
+                self.silhouette(to_layer, cx, scale, (*color, 210), 0.75 if two else 1.0)
+                if game.calib_ok:
+                    self.ring(to_layer(cx, 0.15), int(scale * 0.09),
+                              game.hold / self.cfg["calibrate"]["hold_seconds"], (120, 255, 140))
+            self.message(screen, rect, "Stand side by side" if two else "Stand in the middle", 0.04, 0.06, theme.GOLD)
             self.message(screen, rect, game.calib_msg, 0.84, 0.05)
         elif st == "menu":
             for mode, (x0, y0, x1, y1) in game.menu_zones().items():
@@ -724,10 +845,14 @@ class Renderer:
             self.message(screen, rect, "Hold your hand on a game to pick it", 0.68, 0.045)
         elif st == "ready":
             self.message(screen, rect, game.mode.upper(), 0.12, 0.08, theme.GOLD)
-            self.message(screen, rect, "Raise both hands above your head to start!", 0.75, 0.05)
-            for hand in game.hands:
-                if hand.pos is not None:
-                    self.ring(to_layer(*hand.pos), int(scale * 0.06), game.hold / self.cfg["game"]["hands_up_seconds"])
+            two = len(game.present) > 1
+            self.message(screen, rect, "Both players: raise both hands to start!" if two
+                         else "Raise both hands above your head to start!", 0.75, 0.05)
+            for p in game.present:
+                for hand in p.hands:
+                    if hand.pos is not None:
+                        self.ring(to_layer(*hand.pos), int(scale * 0.06),
+                                  game.hold / self.cfg["game"]["hands_up_seconds"], p.glow if two else (255, 215, 80))
         elif st == "countdown":
             left = self.cfg["game"]["countdown_seconds"] - (game.t - game.state_t)
             k = left - math.floor(left)  # 1 -> 0 within each second
@@ -736,35 +861,57 @@ class Renderer:
                 theme.text, screen, f, str(max(1, math.ceil(left))), theme.GOLD, outline=4, center=rect.center))
         elif st == "play" and game.paused:
             self.message(screen, rect, "Paused - come back in front of the camera", 0.45, 0.055, theme.GOLD)
+        if st in ("play", "boom") and game.two_player:
+            if game.mode == "classic":
+                secs_left = max(0, math.ceil(game.round_end - game.t))
+                clock, color = str(secs_left), ((255, 110, 90) if secs_left <= 10 else theme.CREAM)
+            else:
+                secs = int(game.play_time)
+                clock, color = f"{secs // 60}:{secs % 60:02d}", theme.CREAM
+            self.message(screen, rect, clock, 0.05, 0.06, color)
         elif st == "over":
-            title = "BOOM!" if game.mode == "survival" else "TIME UP!"
-            self.message(screen, rect, title, 0.14, 0.1, (255, 120, 90))
-            self.message(screen, rect, f"Score {game.score}", 0.33, 0.08, theme.GOLD)
+            if game.two_player:
+                if game.winner == -1:
+                    title, color = "DRAW!", theme.GOLD
+                else:
+                    w = game.players[game.winner]
+                    title, color = f"{w.name} WINS!", w.glow
+                self.message(screen, rect, title, 0.12, 0.09, color)
+                if game.loser is not None:
+                    self.message(screen, rect, f"{game.players[game.loser].name} hit a bomb", 0.24, 0.045,
+                                 (255, 120, 90))
+                b, o = game.players
+                self.message(screen, rect, f"{b.score}  :  {o.score}", 0.34, 0.09, theme.CREAM)
+            else:
+                title = "BOOM!" if game.mode == "survival" else "TIME UP!"
+                self.message(screen, rect, title, 0.14, 0.1, (255, 120, 90))
+                self.message(screen, rect, f"Score {game.score}", 0.33, 0.08, theme.GOLD)
             if game.new_best and int(game.t * 3) % 2 == 0:
                 self.message(screen, rect, "NEW BEST!", 0.46, 0.06, (120, 255, 140))
             if game.t - game.state_t >= OVER_COOLDOWN:
                 self.message(screen, rect, "Raise both hands for the menu", 0.75, 0.05)
-                for hand in game.hands:
-                    if hand.pos is not None:
-                        self.ring(to_layer(*hand.pos), int(scale * 0.06),
-                                  game.hold / self.cfg["game"]["hands_up_seconds"])
+                for p in game.present:
+                    for hand in p.hands:
+                        if hand.pos is not None:
+                            self.ring(to_layer(*hand.pos), int(scale * 0.06),
+                                      game.hold / self.cfg["game"]["hands_up_seconds"])
 
-    def silhouette(self, to_layer, a, scale, color):
-        """Outline of a person in the middle of the picture: where to stand."""
-        cx = a / 2
+    def silhouette(self, to_layer, cx, scale, color, k=1.0):
+        """Outline of a person centred at cx: where to stand (k narrows it for two players)."""
         w = max(3, int(scale * 0.01))
-        pygame.draw.circle(self.layer, color, to_layer(cx, 0.15), int(scale * 0.06), w)
-        body = [(cx - 0.11, 0.25), (cx + 0.11, 0.25), (cx + 0.08, 0.55), (cx - 0.08, 0.55)]
+        pygame.draw.circle(self.layer, color, to_layer(cx, 0.15), int(scale * 0.06 * k), w)
+        body = [(cx - 0.11 * k, 0.25), (cx + 0.11 * k, 0.25), (cx + 0.08 * k, 0.55), (cx - 0.08 * k, 0.55)]
         pygame.draw.polygon(self.layer, color, [to_layer(*p) for p in body], w)
         for side in (-1, 1):
-            pygame.draw.line(self.layer, color, to_layer(cx + side * 0.11, 0.26),
-                             to_layer(cx + side * 0.17, 0.52), w)
-            pygame.draw.line(self.layer, color, to_layer(cx + side * 0.06, 0.55),
-                             to_layer(cx + side * 0.08, 0.93), w)
+            pygame.draw.line(self.layer, color, to_layer(cx + side * 0.11 * k, 0.26),
+                             to_layer(cx + side * 0.17 * k, 0.52), w)
+            pygame.draw.line(self.layer, color, to_layer(cx + side * 0.06 * k, 0.55),
+                             to_layer(cx + side * 0.08 * k, 0.93), w)
 
     def draw_panels(self, screen, game, tracker, rect, fps, hint=None):
         left, right = theme.panels(screen.get_size(), rect)
-        lh, rh = game.hands
+        lh, rh = game.players[0].hands
+        versus = game.two_player and game.state in ("countdown", "play", "boom", "over")
         if left:
             y = left.y + 30
             for line in ("FRUIT", "SLICE"):
@@ -773,14 +920,19 @@ class Renderer:
                 y = r.bottom - 4
             if game.mode:
                 theme.text(screen, theme.font(left.w * 0.09), game.mode.upper(), midtop=(left.centerx, y + 12))
-            theme.text(screen, theme.font(left.w * 0.08, name="arial"), "SCORE", midtop=(left.centerx, left.y + left.h * 0.56))
-            theme.text(screen, theme.font(left.w * 0.26), str(game.score), theme.GOLD, outline=3,
+            label, color = (game.players[0].name, game.players[0].glow) if versus else ("SCORE", theme.GOLD)
+            theme.text(screen, theme.font(left.w * 0.08, name="arial"), label, color if versus else theme.CREAM,
+                       midtop=(left.centerx, left.y + left.h * 0.56))
+            theme.text(screen, theme.font(left.w * 0.26), str(game.score), color, outline=3,
                        midtop=(left.centerx, left.y + left.h * 0.61))
             if game.mode:
                 theme.text(screen, theme.font(left.w * 0.07, name="arial"), f"BEST  {game.best[game.mode]}",
                            midtop=(left.centerx, left.y + left.h * 0.88))
         if right:
-            if game.state in ("play", "boom", "over") and game.mode == "classic":
+            if versus:
+                o = game.players[1]
+                label, value = o.name, str(o.score)
+            elif game.state in ("play", "boom", "over") and game.mode == "classic":
                 label, value = "TIME", str(max(0, math.ceil(game.round_end - game.t)) if game.state == "play" else 0)
             elif game.mode == "survival" and game.state in ("play", "boom", "over"):
                 secs = int(game.play_time)
@@ -788,11 +940,13 @@ class Renderer:
             else:
                 label, value = "", ""
             if label:
-                theme.text(screen, theme.font(right.w * 0.09, name="arial"), label, midtop=(right.centerx, right.y + 30))
-                urgent = game.mode == "classic" and game.state == "play" and game.round_end - game.t <= 10
-                theme.text(screen, theme.font(right.w * 0.3), value, (255, 110, 90) if urgent else theme.GOLD,
+                urgent = not versus and game.mode == "classic" and game.state == "play" and game.round_end - game.t <= 10
+                color = game.players[1].glow if versus else ((255, 110, 90) if urgent else theme.GOLD)
+                theme.text(screen, theme.font(right.w * 0.09, name="arial"), label, color if versus else theme.CREAM,
+                           midtop=(right.centerx, right.y + 30))
+                theme.text(screen, theme.font(right.w * 0.3), value, color,
                            outline=3, midtop=(right.centerx, right.y + 30 + right.w * 0.12))
-            if game.mode == "classic" and game.state in ("play", "over"):
+            if not versus and game.mode == "classic" and game.state in ("play", "over"):
                 theme.text(screen, theme.font(right.w * 0.08, name="arial"), f"missed {game.missed}",
                            midtop=(right.centerx, right.y + right.h * 0.45))
             hint = hint or {"calibrate": "Stand in the middle", "menu": "Pick a game", "ready": "Hands up!",
@@ -804,7 +958,8 @@ class Renderer:
                 lines = [f"fps {fps:4.1f}  pose {tracker.pose_ms:4.1f} ms",
                          f"hand L {lh.speed / (game.torso or DEFAULT_TORSO):3.1f}  R {rh.speed / (game.torso or DEFAULT_TORSO):3.1f}",
                          f"cut >= {self.cfg['slice']['speed']} torso/s",
-                         f"torso {game.torso or 0:.2f}  rotate {tracker.rotate}"]
+                         f"torso {game.torso or 0:.2f}  rotate {tracker.rotate}",
+                         f"people {len(game.present)}"]
                 for i, line in enumerate(lines):
                     theme.text(screen, f, line, (200, 190, 170), outline=1,
                                bottomleft=(right.x + 14, right.bottom - 14 - (len(lines) - 1 - i) * f.get_height()))
@@ -869,6 +1024,8 @@ def main():
     sounds = make_sounds()
     clock = pygame.time.Clock()
     last_seq = 0
+    perf_log = HERE.parent / "logs" / "perf.log"  # read remotely to check the box keeps up
+    next_perf = time.perf_counter() + 30
 
     try:
         running = True
@@ -896,18 +1053,18 @@ def main():
                 else:
                     game.press(event.key)
 
-            seq, frame, kp, t_pose = tracker.latest()
+            seq, frame, people, t_pose = tracker.latest()
             fresh = seq != last_seq
             last_seq = seq
             rect, view = layout(frame, screen, cfg)
             game.rotation_locked = tracker.rotation_locked
             now = time.perf_counter()
             if setup.active:
-                dt = game.track(kp, fresh, t_pose, now, view)
+                dt = game.track(people, fresh, t_pose, now, view)
                 hands_px = [(int(rect.x + u * rect.w), int(rect.y + v * rect.h)) for u, v in game.pointers()]
                 setup.update(rect, hands_px, events, dt)
             else:
-                game.update(kp, fresh, t_pose, now, view)
+                game.update(people, fresh, t_pose, now, view)
                 if game.want_settings:
                     game.want_settings = False
                     if net.available:
@@ -921,9 +1078,19 @@ def main():
             # where a plugged-in mouse is one of the ways to press buttons.
             if fullscreen and pygame.mouse.get_visible() != setup.active:
                 pygame.mouse.set_visible(setup.active)
-            renderer.draw(screen, game, tracker, frame, fresh, kp, clock.get_fps(), rect, view,
+            renderer.draw(screen, game, tracker, frame, fresh, people, clock.get_fps(), rect, view,
                           overlay=setup if setup.active else None)
             pygame.display.flip()
+            if now >= next_perf:
+                next_perf = now + 30
+                try:
+                    perf_log.parent.mkdir(exist_ok=True)
+                    with open(perf_log, "a") as f:
+                        f.write(f"{time.strftime('%Y-%m-%dT%H:%M:%S')} fps {clock.get_fps():.1f} "
+                                f"pose_ms {tracker.pose_ms:.1f} people {len(game.present)} state {game.state} "
+                                f"players {len(game.participants)}\n")
+                except OSError:
+                    pass
             clock.tick(60)
     finally:
         tracker.close()

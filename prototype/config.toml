@@ -18,6 +18,8 @@ mirror = true        # screen acts like a mirror
 
 [pose]
 model = "full"       # lite | full (Phase 0: full = 15 ms/frame on this PC)
+max_players = 2      # 1 or 2. With 2, two people in view at the start play against each other
+                     # (BLUE on the left, ORANGE on the right). Two people need the phone in landscape.
 min_visibility = 0.5 # keypoints less visible than this are ignored
 
 [smoothing]          # One Euro filter on hand positions (see pose_service/filters.py)
@@ -55,6 +57,8 @@ window_height = 720
 play_aspect = 0.75     # play area width / height. The phone picture is 0.5625 (9:16); wider shows a
                        # band of it with the top/bottom trimmed. 0 = exactly the camera's shape
 crop_top_share = 0.4   # of the trimmed part, how much comes off the top (rest off the bottom)
+max_play_aspect = 1.33 # landscape camera (two players): show at most 4:3, trimming the far edges a
+                       # little, so the side panels with the two scores still fit
 fullscreen = false   # F toggles in game
 hands_up_seconds = 1.0
 countdown_seconds = 3

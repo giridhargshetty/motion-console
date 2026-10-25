@@ -56,6 +56,14 @@ def parse_wifi_list(text):
     return sorted(best.values(), key=lambda n: -n[1]), in_use
 
 
+def parse_devices(text):
+    """nmcli -t -f TYPE,STATE dev output -> (has a Wi-Fi adapter, a wired connection is up)."""
+    rows = [split_terse(line) for line in text.splitlines() if line]
+    has_wifi = any(r[0] == "wifi" for r in rows)
+    wired = any(r[0] == "ethernet" and len(r) > 1 and r[1] == "connected" for r in rows)
+    return has_wifi, wired
+
+
 def friendly_error(stderr):
     s = stderr.lower()
     if "secrets were required" in s or "password" in s or "802-1x" in s:
@@ -76,6 +84,8 @@ class Network:
         self.networks = []
         self.ssid = None
         self.online = False
+        self.has_wifi = backend == "fake"  # a Wi-Fi adapter exists (the Wyse 7040 has none built in)
+        self.wired = False                 # connected by network cable (or phone USB tethering)
         self.tailscale = None  # None = not installed, else True/False (connected)
         self.busy = False
         self.message = ""
@@ -110,6 +120,8 @@ class Network:
         if self.backend == "fake":
             self.ssid, self.online = self._fake["ssid"], self._fake["ssid"] is not None
         elif self.backend == "nmcli":
+            _, out, _ = run(["nmcli", "-t", "-f", "TYPE,STATE", "dev"])
+            self.has_wifi, self.wired = parse_devices(out)
             _, out, _ = run(["nmcli", "-t", "-f", "IN-USE,SSID,SIGNAL,SECURITY", "dev", "wifi", "list", "--rescan", "no"])
             _, self.ssid = parse_wifi_list(out)
             _, out, _ = run(["nmcli", "networking", "connectivity", "check"])

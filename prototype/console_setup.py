@@ -197,18 +197,20 @@ class Setup:
         net, now = self.net, time.monotonic()
         if self.screen == "status":
             self.text(screen, rect, "NETWORK", 0.07, 0.07, theme.GOLD)
-            rows = [("Wi-Fi", net.ssid or "not connected", net.ssid is not None),
+            wifi = net.ssid or ("not connected" if net.has_wifi else "no Wi-Fi adapter")
+            rows = [("Cable", "connected" if net.wired else "not connected", net.wired),
+                    ("Wi-Fi", wifi, net.ssid is not None),
                     ("Internet", "OK" if net.online else "no connection", net.online),
                     ("Remote access", {None: "not installed", True: "on", False: "off"}[net.tailscale],
                      net.tailscale is True)]
             f = theme.font(rect.h * 0.04, name="arial")
             for i, (label, value, good) in enumerate(rows):
-                y = rect.y + rect.h * (0.2 + i * 0.075)
+                y = rect.y + rect.h * (0.19 + i * 0.065)
                 theme.text(screen, f, label, theme.CREAM, midleft=(rect.x + rect.w * 0.08, y))
                 theme.text(screen, f, value, (130, 240, 150) if good else (255, 140, 110),
                            midright=(rect.right - rect.w * 0.08, y))
             if net.message:
-                self.text(screen, rect, net.message, 0.45, 0.035, (130, 240, 150) if net.message_ok else (255, 140, 110))
+                self.text(screen, rect, net.message, 0.47, 0.035, (130, 240, 150) if net.message_ok else (255, 140, 110))
             if net.online and not self.pointer.interacted:
                 left = max(0, math.ceil(self.auto_seconds - (now - self.opened_at)))
                 self.text(screen, rect, f"Starting in {left}...", 0.88, 0.04)
@@ -217,7 +219,14 @@ class Setup:
         elif self.screen == "list":
             self.text(screen, rect, "CHOOSE WI-FI", 0.06, 0.06, theme.GOLD)
             if not net.networks:
-                self.text(screen, rect, "Searching..." if net.busy else "No networks found", 0.35, 0.045)
+                if net.busy:
+                    msg = "Searching..."
+                elif not net.has_wifi:
+                    msg = ("This box has no Wi-Fi adapter. Use the network cable, "
+                           "or plug in a USB Wi-Fi adapter and search again.")
+                else:
+                    msg = "No networks found"
+                self.text(screen, rect, msg, 0.3, 0.04)
         elif self.screen == "password":
             self.text(screen, rect, f"Password for {self.ssid}", 0.07, 0.045, theme.GOLD)
             field = pygame.Rect(rect.x + rect.w * 0.06, rect.y + rect.h * 0.15, rect.w * 0.88, rect.h * 0.09)

@@ -124,7 +124,8 @@ def panels(screen_size, cam_rect):
     pad = max(16, sw // 60)
     out = []
     for x0, x1 in ((pad, cam_rect.x - t - pad), (cam_rect.right + t + pad, sw - pad)):
-        out.append(pygame.Rect(x0, cam_rect.y + 12, x1 - x0, cam_rect.h - 24) if x1 - x0 >= 160 else None)
+        # Minimum width relative to the screen, so the layout is the same on a 720p or 1080p TV.
+        out.append(pygame.Rect(x0, cam_rect.y + 12, x1 - x0, cam_rect.h - 24) if x1 - x0 >= sw * 0.1 else None)
     return out
 
 

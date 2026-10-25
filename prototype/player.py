@@ -1,9 +1,10 @@
 """Camera + MediaPipe pose for the Phase 1 prototype.
 
 Pose runs on its own thread on the newest camera frame, so the game can draw at display
-rate while tracking runs at camera rate. latest() returns (seq, frame, keypoints, t);
-get_player() returns just the keypoints: 33 x [x, y, visibility], normalised 0..1,
-origin top-left, mirrored like the §3 schema, or None when nobody is detected.
+rate while tracking runs at camera rate. latest() returns (seq, frame, people, t), where
+people is a list (up to [pose] max_players) of keypoint lists: 33 x [x, y, visibility],
+normalised 0..1, origin top-left, mirrored like the §3 schema; empty when nobody is seen.
+get_player() returns just the first person, or None.
 
 Also crops DroidCam's black letterbox bars, and with rotate = "auto" works out which
 way up the camera is by checking which rotation shows an upright person.
@@ -63,11 +64,11 @@ def get_model(name):
     return str(path)
 
 
-def make_landmarker(model, mode):
+def make_landmarker(model, mode, num_poses=1):
     return vision.PoseLandmarker.create_from_options(vision.PoseLandmarkerOptions(
         base_options=mp_tasks.BaseOptions(model_asset_path=get_model(model)),
         running_mode=mode,
-        num_poses=1,
+        num_poses=num_poses,
     ))
 
 
@@ -310,7 +311,8 @@ class PoseTracker:
         self.mirror = cam["mirror"]
         self.crop_bars = cam["crop_bars"]
         self.camera = open_camera(cam)
-        self.landmarker = make_landmarker(cfg["pose"]["model"], vision.RunningMode.VIDEO)
+        self.landmarker = make_landmarker(cfg["pose"]["model"], vision.RunningMode.VIDEO,
+                                          cfg["pose"].get("max_players", 1))
         self._probe = make_landmarker("lite", vision.RunningMode.IMAGE) if self.auto_rotate else None
         self._votes = []
         self._box = None
@@ -318,18 +320,19 @@ class PoseTracker:
         self.pose_ms = 0.0
         self.signal = False  # True once real pictures arrive (not DroidCam's placeholder)
         self._lock = threading.Lock()
-        self._latest = (0, None, None, 0.0)
+        self._latest = (0, None, [], 0.0)
         self._running = True
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
     def latest(self):
-        """(seq, frame, keypoints, t): seq goes up by one per processed frame."""
+        """(seq, frame, people, t): seq goes up by one per processed frame."""
         with self._lock:
             return self._latest
 
     def get_player(self):
-        return self.latest()[2]
+        people = self.latest()[2]
+        return people[0] if people else None
 
     def cycle_rotation(self):
         """Manual override (R key): stops auto-rotation."""
@@ -345,7 +348,7 @@ class PoseTracker:
             self.signal = frame is not None and not is_blank(frame)
             if not self.signal:  # tell the game nobody is visible, rather than repeat old keypoints
                 with self._lock:
-                    self._latest = (self._latest[0] + 1, None, None, time.perf_counter())
+                    self._latest = (self._latest[0] + 1, None, [], time.perf_counter())
                 continue
             frame = self._crop(frame)
             if not self.rotation_locked and n % 10 == 0:
@@ -365,12 +368,10 @@ class PoseTracker:
             # Pose runs on the unmirrored picture so left/right keypoint labels stay true to
             # the player's body; only x is mirrored, together with the displayed frame.
             shown = cv2.flip(frame, 1) if self.mirror else frame
-            kp = None
-            if result.pose_landmarks:
-                kp = [[1 - p.x if self.mirror else p.x, p.y, p.visibility]
-                      for p in result.pose_landmarks[0]]
+            people = [[[1 - p.x if self.mirror else p.x, p.y, p.visibility] for p in lm]
+                      for lm in result.pose_landmarks]
             with self._lock:
-                self._latest = (self._latest[0] + 1, shown, kp, t)
+                self._latest = (self._latest[0] + 1, shown, people, t)
 
     def _crop(self, frame):
         if not self.crop_bars:
