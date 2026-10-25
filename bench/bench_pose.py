@@ -8,6 +8,8 @@ Usage (Windows, PowerShell):
     .venv\Scripts\python bench\bench_pose.py --backend msmf --cam 1 --model full
 
 Keys while running:  q = quit and print summary,  f = toggle fullscreen
+By default it counts down 5 s (--delay) so you can walk into position, those frames are
+not counted, then measures for 30 s (--seconds) and stops by itself. --seconds 0 = until q.
 
 What it measures:
   - camera fps     : how many frames the camera actually delivers
@@ -90,6 +92,10 @@ def main():
     ap.add_argument("--width", type=int, default=640)
     ap.add_argument("--height", type=int, default=480)
     ap.add_argument("--backend", choices=BACKENDS.keys(), default=DEFAULT_BACKEND)
+    ap.add_argument("--seconds", type=float, default=30,
+                    help="stop by itself after this many measured seconds (0 = run until q)")
+    ap.add_argument("--delay", type=float, default=5,
+                    help="countdown before measuring, to walk into position")
     ap.add_argument("--list", action="store_true", help="list cameras and exit")
     args = ap.parse_args()
 
@@ -114,6 +120,7 @@ def main():
     pose_ms, loop_times, read_times = [], [], []
     detected = frames = 0
     t_start = last = time.perf_counter()
+    t_measure = t_start + args.delay  # frames before this are shown but not counted
 
     while True:
         t0 = time.perf_counter()
@@ -122,17 +129,16 @@ def main():
         if not ok:
             print("Camera stopped delivering frames.")
             break
-        read_times.append(t1 - t0)
+        measuring = t1 >= t_measure
 
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
         result = landmarker.detect_for_video(image, int((t1 - t_start) * 1000))
         t2 = time.perf_counter()
-        pose_ms.append((t2 - t1) * 1000)
 
         h, w = frame.shape[:2]
         if result.pose_landmarks:
-            detected += 1
+            detected += measuring
             lm = result.pose_landmarks[0]
             pts = [(int(p.x * w), int(p.y * h)) for p in lm]
             for a, b in BONES:
@@ -140,18 +146,28 @@ def main():
             cv2.circle(frame, pts[RIGHT_WRIST], 22, (0, 0, 255), -1)  # latency marker
 
         now = time.perf_counter()
-        loop_times.append(now - last)
+        if measuring:
+            read_times.append(t1 - t0)
+            pose_ms.append((t2 - t1) * 1000)
+            loop_times.append(now - last)
+            frames += 1
         last = now
-        frames += 1
 
-        recent = loop_times[-30:]
-        fps = len(recent) / sum(recent) if sum(recent) > 0 else 0
-        cv2.putText(frame, f"loop {fps:4.1f} fps | pose {pose_ms[-1]:4.1f} ms | {args.model}",
-                    (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+        if measuring:
+            recent = loop_times[-30:]
+            fps = len(recent) / sum(recent) if sum(recent) > 0 else 0
+            status = f"loop {fps:4.1f} fps | pose {pose_ms[-1]:4.1f} ms | {args.model}"
+            if args.seconds:
+                status += f" | {max(0, t_measure + args.seconds - now):3.0f} s left"
+        else:
+            status = f"GET IN POSITION... measuring in {t_measure - now:.0f} s"
+        cv2.putText(frame, status, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
         cv2.imshow(win, frame)
 
         key = cv2.waitKey(1) & 0xFF
         if key == ord("q"):
+            break
+        if args.seconds and now >= t_measure + args.seconds:
             break
         if key == ord("f"):
             fullscreen = not fullscreen

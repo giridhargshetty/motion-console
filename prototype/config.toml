@@ -1,0 +1,67 @@
+# Phase 1 prototype settings. Thresholds live here, not in code (CLAUDE.md §7).
+# Distances are in screen-heights (1.0 = full height of the camera picture), times in seconds.
+
+[camera]
+# "droidcam_usb": straight from the DroidCam phone app over USB (adb), no DroidCam PC client.
+#   Keep the PC client closed: the phone app serves one connection at a time.
+# "msmf" | "dshow" | "any": a webcam (or the DroidCam PC client's virtual webcam) at `index`;
+#   list them with: .venv\Scripts\python bench\bench_pose.py --list
+backend = "droidcam_usb"
+index = 1
+usb_port = 4747      # PC-side port forwarded to the phone (droidcam_usb)
+adb = "auto"         # path to adb.exe, or "auto" to find it (DroidCam install, Android SDK, winget)
+width = 640
+height = 480
+rotate = "auto"      # "auto" finds which way up the phone is; or 0 | 90 | 180 | 270 (R key in game)
+crop_bars = true     # cut off DroidCam's black letterbox bars
+mirror = true        # screen acts like a mirror
+
+[pose]
+model = "full"       # lite | full (Phase 0: full = 15 ms/frame on this PC)
+min_visibility = 0.5 # keypoints less visible than this are ignored
+
+[smoothing]          # One Euro filter on hand positions (see pose_service/filters.py)
+min_cutoff = 1.0     # lower = steadier when still, but more lag
+beta = 10.0          # higher = less lag on fast swipes
+
+[calibrate]
+center_tolerance = 0.12  # how far the hips may be from the middle (fraction of picture width)
+min_torso = 0.10         # torso (shoulders to hips) shorter than this = too far away
+max_torso = 0.38         # longer than this = too close
+need_knees = true        # knees must be visible (makes sure kids stand far enough back)
+hold_seconds = 1.5       # stand still in position this long
+lost_seconds = 4.0       # nobody seen this long outside a game = calibrate again
+
+[slice]
+speed = 3.5          # hand speed needed to cut, in torso-lengths per second, so it scales with
+                     # body size: a child's swipe counts like an adult's. Lower = easier
+hit_margin = 0.04    # extra reach around each fruit
+trail_seconds = 0.22 # how long the blade trail stays on screen
+combo_seconds = 0.4  # cuts this close together build a combo (3+ = bonus points)
+
+[menu]
+hover_seconds = 1.2  # hold a hand on a mode this long to pick it
+
+[game]
+window_width = 1280
+window_height = 720
+fullscreen = false   # F toggles in game
+hands_up_seconds = 1.0
+countdown_seconds = 3
+fruit_radius = 0.065
+gravity = 1.6
+launch_speed = [1.4, 1.8]  # upward speed; 1.8 with gravity 1.6 just reaches the top
+fruit_speed = 0.9    # 1.0 = normal; 0.9 = fruit and bombs fly 10% slower on the same arcs
+
+[classic]            # fruit only, against the clock
+round_seconds = 60
+spawn_every = 1.3
+fruits_per_wave = [1, 3]
+
+[survival]           # fruit and bombs, gets harder until you slice a bomb
+spawn_every_start = 1.4
+spawn_every_min = 0.6
+ramp_seconds = 90    # time to reach full difficulty
+fruits_per_wave = [1, 4]
+bomb_chance_start = 0.15
+bomb_chance_max = 0.35

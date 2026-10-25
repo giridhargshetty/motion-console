@@ -151,26 +151,26 @@ No repo is the base. Take one idea/module from each. **Check each repo's licence
 
 Don't start the next phase until the gate passes. A tracking problem found after the games are built costs 3× to fix.
 
-### Phase 0 — Benchmark (week 1) ← **START HERE**
+### Phase 0 — Benchmark (week 1) ✅ closed 2026-10-25 (see `bench/RESULTS.md`)
 
 `bench/bench_pose.py` already exists (copy it into the repo). It runs MediaPipe PoseLandmarker in VIDEO mode, draws the skeleton, puts a big red dot on the right wrist for the latency test, and prints a summary on `q`.
 
 Tasks:
-- [ ] Set up venv, install `mediapipe opencv-python`, run `--list` to find the DroidCam camera index
-- [ ] Run `--model lite` and `--model full` at 640×480 with one player 2 m from the camera
-- [ ] Re-run with a second person walking behind the player
-- [ ] Latency: fullscreen on TV (`f`), film hand + screen with phone 240 fps slow-mo, count frames. `ms = frames / 240 × 1000`
-- [ ] Record results in `bench/RESULTS.md` (model, resolution, loop fps, pose ms avg/p95, detection %, latency ms)
+- [x] Set up venv, install `mediapipe opencv-python`, run `--list` to find the DroidCam camera index (DroidCam = `--backend msmf --cam 1`)
+- [x] Run `--model lite` and `--model full` at 640×480 with one player 2 m from the camera (on the laptop; re-run on the mini PC)
+- [ ] *Deferred to Phase 2 clips:* Re-run with a second person walking behind the player
+- [ ] *Deferred:* Latency: fullscreen on TV (`f`), film hand + screen with phone 240 fps slow-mo, count frames. `ms = frames / 240 × 1000`
+- [x] Record results in `bench/RESULTS.md` (model, resolution, loop fps, pose ms avg/p95, detection %, latency ms)
 - [ ] Optional improvement: add `--json-out` to write the summary as JSON for later comparison
 
 **Gate:** one player at **≥ 30 fps** on the mini PC. If not, try `--model lite --width 480 --height 360` before buying hardware.
 
 ### Phase 1 — Single-player prototype (weeks 2–3)
 
-- [ ] Clone FPTU_Ninja_Fruit_VR into `prototype/`, run unchanged
-- [ ] Wrap its MediaPipe loop behind `get_player()` (returns keypoints or `None`)
-- [ ] Add One Euro smoothing to wrists; tune slice velocity threshold for a **child's** arm speed
-- [ ] Make thresholds config values, not magic numbers
+- [x] Clone FPTU_Ninja_Fruit_VR into `prototype/_reference/` (no licence: git-ignored, study only), run with a camera patch
+- [x] Reimplemented as our own `prototype/fruit_slice.py`; pose behind `get_player()` in `prototype/player.py`
+- [x] Add One Euro smoothing to wrists (`pose_service/filters.py`); slice speed scales with body size (torso-lengths/s). *Still to playtest with a child*
+- [x] Make thresholds config values, not magic numbers (`prototype/config.toml`)
 
 **Gate:** a child plays 5 minutes unprompted; measured latency < 120 ms.
 

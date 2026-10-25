@@ -14,3 +14,13 @@ godot/.godot/
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# Third-party reference code with no licence: run and study only, never commit
+prototype/_reference/
+
+# Prototype high scores (local)
+prototype/highscores.json
+
+# Per-machine settings and console logs
+prototype/config.local.toml
+logs/
