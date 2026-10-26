@@ -1,0 +1,264 @@
+{
+ "version": 1,
+ "name": "KNIGHT",
+ "scene": "scene.jpg",
+ "pieces": [
+  {
+   "name": "helmet",
+   "layer": "front",
+   "views": [
+    {
+     "file": "helmet.png",
+     "size": [
+      267,
+      320
+     ],
+     "anchors": {
+      "l_ear": [
+       220.4,
+       234.0
+      ],
+      "r_ear": [
+       46.6,
+       234.0
+      ]
+     },
+     "ratio": 0.0,
+     "scale_ref": {
+      "l_shoulder": [
+       268.7,
+       383.7
+      ],
+      "r_shoulder": [
+       -1.7,
+       383.7
+      ]
+     }
+    },
+    {
+     "file": "helmet_a.png",
+     "size": [
+      320,
+      270
+     ],
+     "anchors": {
+      "l_ear": [
+       222.4,
+       197.4
+      ],
+      "r_ear": [
+       102.3,
+       197.4
+      ]
+     },
+     "ratio": 0.195,
+     "scale_ref": {
+      "l_shoulder": [
+       276.3,
+       323.6
+      ],
+      "r_shoulder": [
+       48.3,
+       323.6
+      ]
+     }
+    },
+    {
+     "file": "helmet_b.png",
+     "size": [
+      320,
+      270
+     ],
+     "anchors": {
+      "l_ear": [
+       217.7,
+       197.4
+      ],
+      "r_ear": [
+       97.6,
+       197.4
+      ]
+     },
+     "ratio": -0.195,
+     "scale_ref": {
+      "l_shoulder": [
+       271.7,
+       323.6
+      ],
+      "r_shoulder": [
+       43.7,
+       323.6
+      ]
+     }
+    }
+   ],
+   "min_vis": 0.3
+  },
+  {
+   "name": "armour",
+   "layer": "front",
+   "views": [
+    {
+     "file": "armour.png",
+     "size": [
+      320,
+      263
+     ],
+     "anchors": {
+      "l_shoulder": [
+       246.7,
+       54.9
+      ],
+      "r_shoulder": [
+       73.3,
+       54.9
+      ],
+      "mid_hip": [
+       160.0,
+       234.5
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "shield",
+   "layer": "front",
+   "views": [
+    {
+     "file": "shield.png",
+     "size": [
+      215,
+      320
+     ],
+     "anchors": {
+      "l_elbow": [
+       57.4,
+       63.5
+      ],
+      "l_wrist": [
+       84.7,
+       218.5
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "sword",
+   "layer": "front",
+   "views": [
+    {
+     "file": "sword.png",
+     "size": [
+      91,
+      320
+     ],
+     "anchors": {
+      "r_elbow": [
+       66.5,
+       -28.9
+      ],
+      "r_wrist": [
+       52.0,
+       53.1
+      ]
+     }
+    }
+   ],
+   "sparkle": true
+  },
+  {
+   "name": "l_gauntlet",
+   "layer": "front",
+   "views": [
+    {
+     "file": "l_gauntlet.png",
+     "size": [
+      251,
+      320
+     ],
+     "anchors": {
+      "l_elbow": [
+       56.4,
+       -268.3
+      ],
+      "l_wrist": [
+       123.7,
+       113.4
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "l_boot",
+   "layer": "front",
+   "views": [
+    {
+     "file": "l_boot.png",
+     "size": [
+      203,
+      320
+     ],
+     "anchors": {
+      "l_knee": [
+       101.5,
+       -102.7
+      ],
+      "l_ankle": [
+       101.5,
+       221.0
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "r_gauntlet",
+   "layer": "front",
+   "views": [
+    {
+     "file": "r_gauntlet.png",
+     "size": [
+      251,
+      320
+     ],
+     "anchors": {
+      "r_elbow": [
+       194.6,
+       -268.3
+      ],
+      "r_wrist": [
+       127.3,
+       113.4
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "r_boot",
+   "layer": "front",
+   "views": [
+    {
+     "file": "r_boot.png",
+     "size": [
+      203,
+      320
+     ],
+     "anchors": {
+      "r_knee": [
+       101.5,
+       -102.7
+      ],
+      "r_ankle": [
+       101.5,
+       221.0
+      ]
+     }
+    }
+   ]
+  }
+ ]
+}

@@ -1,0 +1,149 @@
+{
+ "version": 1,
+ "name": "ROYAL",
+ "scene": "scene.jpg",
+ "pieces": [
+  {
+   "name": "crown",
+   "layer": "front",
+   "views": [
+    {
+     "file": "crown.png",
+     "size": [
+      320,
+      182
+     ],
+     "anchors": {
+      "l_ear": [
+       300.4,
+       315.6
+      ],
+      "r_ear": [
+       19.6,
+       315.6
+      ]
+     },
+     "ratio": 0.0,
+     "scale_ref": {
+      "l_shoulder": [
+       378.3,
+       557.3
+      ],
+      "r_shoulder": [
+       -58.3,
+       557.3
+      ]
+     }
+    },
+    {
+     "file": "crown_a.png",
+     "size": [
+      320,
+      131
+     ],
+     "anchors": {
+      "l_ear": [
+       242.5,
+       226.7
+      ],
+      "r_ear": [
+       77.5,
+       226.7
+      ]
+     },
+     "ratio": 0.195,
+     "scale_ref": {
+      "l_shoulder": [
+       316.8,
+       400.3
+      ],
+      "r_shoulder": [
+       3.2,
+       400.3
+      ]
+     }
+    },
+    {
+     "file": "crown_b.png",
+     "size": [
+      320,
+      131
+     ],
+     "anchors": {
+      "l_ear": [
+       242.5,
+       226.7
+      ],
+      "r_ear": [
+       77.5,
+       226.7
+      ]
+     },
+     "ratio": -0.195,
+     "scale_ref": {
+      "l_shoulder": [
+       316.8,
+       400.3
+      ],
+      "r_shoulder": [
+       3.2,
+       400.3
+      ]
+     }
+    }
+   ],
+   "min_vis": 0.3
+  },
+  {
+   "name": "gown",
+   "layer": "front",
+   "views": [
+    {
+     "file": "gown.png",
+     "size": [
+      309,
+      320
+     ],
+     "anchors": {
+      "l_shoulder": [
+       217.0,
+       34.2
+      ],
+      "r_shoulder": [
+       92.0,
+       34.2
+      ],
+      "mid_hip": [
+       154.5,
+       163.8
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "wand",
+   "layer": "front",
+   "views": [
+    {
+     "file": "wand.png",
+     "size": [
+      99,
+      320
+     ],
+     "anchors": {
+      "r_elbow": [
+       113.1,
+       -116.3
+      ],
+      "r_wrist": [
+       89.7,
+       16.4
+      ]
+     }
+    }
+   ],
+   "sparkle": true
+  }
+ ]
+}

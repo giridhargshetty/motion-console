@@ -7,6 +7,7 @@ Flow (no keyboard needed):
   network screen -> calibrate -> HOME SCREEN -> game
     FRUIT SLICE: how many players?, then Classic or Survival (fruit_slice.py)
     BOXING: pick a boxer, 1 player (boxing.py, boxing_draw.py)
+    DRESS UP: a magic mirror, costumes follow you (dressup.py, dressup_draw.py, dressup_fit.py)
   The game picker is a TV-style home screen (home.py): six tiles (the games, then empty slots
   for future ones) and Settings.
 Keys (for the grown-up): R rotate camera  S skeleton  D debug line  F fullscreen  Ctrl+Q quit
@@ -30,6 +31,9 @@ import fruit_slice as fs  # noqa: E402
 import player as pl  # noqa: E402
 from boxing import Boxing  # noqa: E402
 from boxing_draw import BoxingRenderer, make_sounds as boxing_sounds  # noqa: E402
+import dressup_fit  # noqa: E402
+from dressup import DressUp  # noqa: E402
+from dressup_draw import DressUpRenderer, make_sounds as dressup_sounds  # noqa: E402
 from console_setup import Setup  # noqa: E402
 from home import Home, HomeRenderer  # noqa: E402
 from network import Network  # noqa: E402
@@ -76,13 +80,15 @@ def main():
     renderer = fs.Renderer(cfg)
     boxing_renderer = BoxingRenderer(renderer)
     boxing = None                           # the boxing game while it's on
+    dressup = None                          # Dress Up while it's on
+    dressup_renderer = DressUpRenderer(renderer, cfg)
     home = Home(cfg)                        # the home screen (while game.state == "home")
     home_renderer = HomeRenderer(renderer)
     net = Network(cfg["network"]["backend"])
     setup = Setup(cfg, net)
     if net.available and cfg["network"]["show_at_startup"]:
         setup.open()
-    sounds = fs.make_sounds() | boxing_sounds()
+    sounds = fs.make_sounds() | boxing_sounds() | dressup_sounds()
     clock = pygame.time.Clock()
     last_seq = 0
     perf_log = HERE.parent / "logs" / "perf.log"  # read remotely to check the box keeps up
@@ -115,6 +121,8 @@ def main():
                     screen = set_mode()
                 elif boxing is not None:
                     boxing.press(event.key)
+                elif dressup is not None:
+                    dressup.press(event.key)
                 elif game.state == "home":
                     pick = home.press(event.key)
                 else:
@@ -125,7 +133,8 @@ def main():
             last_seq = seq
             rect, view = fs.layout(frame, screen, cfg)
             game.rotation_locked = tracker.rotation_locked
-            tracker.want_people = 1 if boxing is not None else game.want_people
+            tracker.want_people = 1 if boxing is not None or dressup is not None else game.want_people
+            tracker.want_mask = dressup is not None and cfg["dressup"]["person_mask"]
             tracker.recheck_rotation = game.state == "calibrate"  # follow the phone if it was turned
             now = time.perf_counter()
             if setup.active:
@@ -138,6 +147,12 @@ def main():
                 if boxing.done:  # back to the home screen
                     boxing = None
                     boxing_renderer.stop_audio()
+                    game.goto("home")
+            elif dressup is not None:
+                dt = game.track(people, fresh, t_pose, now, view)
+                dressup.update(dt, fresh)
+                if dressup.done:
+                    dressup = None
                     game.goto("home")
             else:
                 dt = game.update(people, fresh, t_pose, now, view)
@@ -154,9 +169,12 @@ def main():
                 game.start()
             elif pick == "boxing":
                 boxing = Boxing(cfg, game, game.best, save_scores)
+            elif pick == "dressup":
+                names = dressup_fit.costume_names(cfg["dressup"]["costumes"])
+                dressup = DressUp(cfg, game, names, dressup_fit.sparkly(names))
             elif pick == "settings" and net.available:
                 setup.open()
-            for source in (game, boxing, home):
+            for source in (game, boxing, dressup, home):
                 if source is not None:
                     for name in source.sounds:
                         if name in sounds:
@@ -169,6 +187,8 @@ def main():
                 pygame.mouse.set_visible(setup.active)
             if boxing is not None and not setup.active:
                 boxing_renderer.draw(screen, boxing, tracker, frame, fresh, rect, view, clock.get_fps())
+            elif dressup is not None and not setup.active:
+                dressup_renderer.draw(screen, dressup, tracker, frame, fresh, view, clock.get_fps())
             elif game.state == "home" and not setup.active:
                 home_renderer.draw(screen, home, game, tracker)
             else:
@@ -177,7 +197,9 @@ def main():
             pygame.display.flip()
             if now >= next_perf:
                 next_perf = now + 30
-                state = f"boxing:{boxing.state}" if boxing is not None else game.state
+                state = (f"boxing:{boxing.state}" if boxing is not None else
+                         f"dressup:{dressup.state}:mask={int(dressup_renderer.person_masked)}" if dressup is not None
+                         else game.state)
                 try:
                     perf_log.parent.mkdir(exist_ok=True)
                     with open(perf_log, "a") as f:

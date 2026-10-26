@@ -1,0 +1,244 @@
+{
+ "version": 1,
+ "name": "SUPERHERO",
+ "scene": "scene.jpg",
+ "pieces": [
+  {
+   "name": "mask",
+   "layer": "front",
+   "views": [
+    {
+     "file": "mask.png",
+     "size": [
+      320,
+      67
+     ],
+     "anchors": {
+      "l_ear": [
+       293.6,
+       51.2
+      ],
+      "r_ear": [
+       26.4,
+       51.2
+      ]
+     },
+     "ratio": 0.0,
+     "scale_ref": {
+      "l_shoulder": [
+       367.9,
+       281.3
+      ],
+      "r_shoulder": [
+       -47.9,
+       281.3
+      ]
+     }
+    },
+    {
+     "file": "mask_a.png",
+     "size": [
+      320,
+      66
+     ],
+     "anchors": {
+      "l_ear": [
+       206.5,
+       50.3
+      ],
+      "r_ear": [
+       -7.6,
+       50.3
+      ]
+     },
+     "ratio": 0.195,
+     "scale_ref": {
+      "l_shoulder": [
+       302.8,
+       275.4
+      ],
+      "r_shoulder": [
+       -103.9,
+       275.4
+      ]
+     }
+    },
+    {
+     "file": "mask_b.png",
+     "size": [
+      320,
+      66
+     ],
+     "anchors": {
+      "l_ear": [
+       327.6,
+       50.3
+      ],
+      "r_ear": [
+       113.5,
+       50.3
+      ]
+     },
+     "ratio": -0.195,
+     "scale_ref": {
+      "l_shoulder": [
+       423.9,
+       275.4
+      ],
+      "r_shoulder": [
+       17.2,
+       275.4
+      ]
+     }
+    }
+   ],
+   "min_vis": 0.3
+  },
+  {
+   "name": "cape",
+   "layer": "behind",
+   "views": [
+    {
+     "file": "cape.png",
+     "size": [
+      320,
+      300
+     ],
+     "anchors": {
+      "l_shoulder": [
+       219.9,
+       24.1
+      ],
+      "r_shoulder": [
+       98.5,
+       24.1
+      ],
+      "mid_hip": [
+       159.2,
+       149.8
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "suit",
+   "layer": "front",
+   "views": [
+    {
+     "file": "suit.png",
+     "size": [
+      320,
+      274
+     ],
+     "anchors": {
+      "l_shoulder": [
+       256.5,
+       43.3
+      ],
+      "r_shoulder": [
+       63.5,
+       43.3
+      ],
+      "mid_hip": [
+       160.0,
+       243.1
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "l_glove",
+   "layer": "front",
+   "views": [
+    {
+     "file": "l_glove.png",
+     "size": [
+      251,
+      320
+     ],
+     "anchors": {
+      "l_elbow": [
+       56.4,
+       -268.3
+      ],
+      "l_wrist": [
+       123.7,
+       113.4
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "l_boot",
+   "layer": "front",
+   "views": [
+    {
+     "file": "l_boot.png",
+     "size": [
+      152,
+      320
+     ],
+     "anchors": {
+      "l_knee": [
+       76.0,
+       0.7
+      ],
+      "l_ankle": [
+       76.0,
+       242.9
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "r_glove",
+   "layer": "front",
+   "views": [
+    {
+     "file": "r_glove.png",
+     "size": [
+      251,
+      320
+     ],
+     "anchors": {
+      "r_elbow": [
+       194.6,
+       -268.3
+      ],
+      "r_wrist": [
+       127.3,
+       113.4
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "r_boot",
+   "layer": "front",
+   "views": [
+    {
+     "file": "r_boot.png",
+     "size": [
+      152,
+      320
+     ],
+     "anchors": {
+      "r_knee": [
+       76.0,
+       0.7
+      ],
+      "r_ankle": [
+       76.0,
+       242.9
+      ]
+     }
+    }
+   ]
+  }
+ ]
+}

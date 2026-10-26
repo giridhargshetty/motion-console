@@ -66,12 +66,16 @@ def get_model(name):
     return str(path)
 
 
-def make_landmarker(model, mode, num_poses=1):
+def make_landmarker(model, mode, num_poses=1, masks=False):
     return vision.PoseLandmarker.create_from_options(vision.PoseLandmarkerOptions(
         base_options=mp_tasks.BaseOptions(model_asset_path=get_model(model)),
         running_mode=mode,
         num_poses=num_poses,
+        output_segmentation_masks=masks,  # the person's outline (Dress Up); costs a few ms
     ))
+
+
+MASK_WIDTH = 320  # person masks are kept this small: plenty for cutting the player out
 
 
 ROTATION_FILE = MODEL_DIR.parent / "logs" / "camera_rotation.json"  # logs/ is not in git
@@ -361,6 +365,9 @@ class PoseTracker:
         self.max_people = cfg["pose"].get("max_players", 1)
         self.want_people = self.max_people  # the game lowers this to 1 for 1-player rounds
         self._people = self.want_people
+        self.want_mask = False  # Dress Up turns this on: the person's outline with every frame
+        self._masks = False
+        self._mask = (0, None)  # (seq, uint8 mask the shape of the shown frame, MASK_WIDTH wide)
         self.landmarker = make_landmarker(self.model, vision.RunningMode.VIDEO, self._people)
         self._probe = make_landmarker("lite", vision.RunningMode.IMAGE) if self.auto_rotate else None
         self._votes = []
@@ -379,6 +386,11 @@ class PoseTracker:
         """(seq, frame, people, t): seq goes up by one per processed frame."""
         with self._lock:
             return self._latest
+
+    def latest_mask(self):
+        """(seq, mask): the person's outline for frame seq (0..255, mirrored like the frame), or None."""
+        with self._lock:
+            return self._mask
 
     def get_player(self):
         people = self.latest()[2]
@@ -408,11 +420,12 @@ class PoseTracker:
                 continue
             frame = self._crop(frame)
             want = max(1, min(self.want_people, self.max_people))
-            if want != self._people:
-                # Looking for one person is faster than two, and passers-by can't join in.
+            if want != self._people or self.want_mask != self._masks:
+                # Looking for one person is faster than two, and passers-by can't join in;
+                # the outline is only worked out while a game wants it.
                 self.landmarker.close()
-                self.landmarker = make_landmarker(self.model, vision.RunningMode.VIDEO, want)
-                self._people = want
+                self.landmarker = make_landmarker(self.model, vision.RunningMode.VIDEO, want, self.want_mask)
+                self._people, self._masks = want, self.want_mask
             if self.auto_rotate and (not self.rotation_locked and n % 10 == 0
                                      or self.recheck_rotation and n % 30 == 0):
                 self._probe_rotation(frame)
@@ -433,8 +446,16 @@ class PoseTracker:
             shown = cv2.flip(frame, 1) if self.mirror else frame
             people = [[[1 - p.x if self.mirror else p.x, p.y, p.visibility, p.z] for p in lm]
                       for lm in result.pose_landmarks]
+            mask = None
+            if self._masks and result.segmentation_masks:
+                m = result.segmentation_masks[0].numpy_view()
+                m = m.reshape(m.shape[:2])
+                h, w = m.shape
+                m = cv2.resize(m, (MASK_WIDTH, max(1, round(MASK_WIDTH * h / w))), interpolation=cv2.INTER_AREA)
+                mask = ((cv2.flip(m, 1) if self.mirror else m) * 255).astype("uint8")
             with self._lock:
                 self._latest = (self._latest[0] + 1, shown, people, t)
+                self._mask = (self._latest[0], mask)
 
     def _crop(self, frame):
         if not self.crop_bars:

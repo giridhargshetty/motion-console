@@ -8,6 +8,7 @@ nothing), or with a remote: arrows move, OK opens.
 
 import math
 import time
+from pathlib import Path
 
 import pygame
 
@@ -15,7 +16,8 @@ import theme
 from boxing_draw import GLOVE_BLUE, boxer_sprites
 
 # (key, title, subtitle); None = an empty slot for a future game
-GAMES = [("fruit", "FRUIT SLICE", "1 or 2 players"), ("boxing", "BOXING", "1 player"), None, None, None, None]
+GAMES = [("fruit", "FRUIT SLICE", "1 or 2 players"), ("boxing", "BOXING", "1 player"),
+         ("dressup", "DRESS UP", "1 player"), None, None, None]
 COLS = 3
 SETTINGS = (0.8, 0.04, 0.96, 0.13)   # u0, v0, u1, v1 in 0..1 of the screen
 GRID = (0.06, 0.2, 0.94, 0.86)
@@ -203,6 +205,8 @@ class HomeRenderer:
             self.fruit_art(screen, art, home.t)
         elif key == "boxing":
             self.boxing_art(screen, art, home.t)
+        elif key == "dressup":
+            self.dressup_art(screen, art, home.t)
         screen.set_clip(clip)
         theme.text(screen, theme.font(box.h * 0.13), title, GOLD, outline=2,
                    center=(box.centerx, int(box.y + box.h * 0.79)))
@@ -231,6 +235,18 @@ class HomeRenderer:
         img = frames and frames.frame("idle", t, art.h * 2.2)
         if img is not None:  # head to waist: the frame has empty space round the boxer
             screen.blit(img, img.get_rect(midtop=(art.centerx, art.y - img.get_height() * 0.19)))
+
+    def dressup_art(self, screen, art, t):
+        """Costume previews taking turns: one in front, the others peeking from the sides."""
+        pygame.draw.rect(screen, (60, 26, 80), art)
+        names = [n for n in ("knight", "royal", "astronaut", "wizard", "superhero", "pirate")
+                 if (COSTUMES / n / "preview.png").exists()]
+        if not names:
+            return
+        front = int(t / 2.5) % len(names)
+        for i, dx in ((front - 1, -0.3), (front + 1, 0.3), (front, 0.0)):
+            img = _preview(names[i % len(names)], int(art.h * (0.95 if dx == 0 else 0.75)))
+            screen.blit(img, img.get_rect(midbottom=(art.centerx + art.w * dx, art.bottom + art.h * 0.03)))
 
     @staticmethod
     def dashed(screen, box, color, dash=16):
@@ -274,6 +290,19 @@ def _glow(r, color):
             pygame.draw.circle(surf, tuple(int(c * f) for c in color), (r, r), k)
         _glows[key] = surf
     return _glows[key]
+
+
+COSTUMES = Path(__file__).resolve().parent.parent / "assets" / "costumes"
+_previews = {}
+
+
+def _preview(name, height):
+    key = (name, height)
+    if key not in _previews:
+        surf = pygame.image.load(str(COSTUMES / name / "preview.png")).convert_alpha()
+        w = max(1, int(surf.get_width() * height / surf.get_height()))
+        _previews[key] = pygame.transform.smoothscale(surf, (w, height))
+    return _previews[key]
 
 
 _woods = {}
