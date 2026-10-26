@@ -1,0 +1,309 @@
+{
+ "version": 1,
+ "name": "ZOMBIE",
+ "scene": "scene.jpg",
+ "pieces": [
+  {
+   "name": "torso",
+   "layer": "front",
+   "views": [
+    {
+     "file": "torso.png",
+     "size": [
+      247,
+      320
+     ],
+     "anchors": {
+      "l_shoulder": [
+       230.9,
+       53.7
+      ],
+      "r_shoulder": [
+       15.9,
+       53.7
+      ],
+      "mid_hip": [
+       123.4,
+       276.3
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "l_thigh",
+   "layer": "front",
+   "views": [
+    {
+     "file": "l_thigh.png",
+     "size": [
+      218,
+      320
+     ],
+     "anchors": {
+      "l_hip": [
+       106.3,
+       13.7
+      ],
+      "l_knee": [
+       111.7,
+       306.3
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "l_shin",
+   "layer": "front",
+   "views": [
+    {
+     "file": "l_shin.png",
+     "size": [
+      164,
+      320
+     ],
+     "anchors": {
+      "l_knee": [
+       77.7,
+       36.2
+      ],
+      "l_ankle": [
+       77.7,
+       238.6
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "r_thigh",
+   "layer": "front",
+   "views": [
+    {
+     "file": "r_thigh.png",
+     "size": [
+      218,
+      320
+     ],
+     "anchors": {
+      "r_hip": [
+       111.7,
+       13.7
+      ],
+      "r_knee": [
+       106.3,
+       306.3
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "r_shin",
+   "layer": "front",
+   "views": [
+    {
+     "file": "r_shin.png",
+     "size": [
+      164,
+      320
+     ],
+     "anchors": {
+      "r_knee": [
+       86.2,
+       36.2
+      ],
+      "r_ankle": [
+       86.2,
+       238.6
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "l_upper_arm",
+   "layer": "front",
+   "views": [
+    {
+     "file": "l_upper_arm.png",
+     "size": [
+      303,
+      320
+     ],
+     "anchors": {
+      "l_shoulder": [
+       105.6,
+       -28.8
+      ],
+      "l_elbow": [
+       201.3,
+       334.8
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "l_forearm",
+   "layer": "front",
+   "views": [
+    {
+     "file": "l_forearm.png",
+     "size": [
+      167,
+      320
+     ],
+     "anchors": {
+      "l_elbow": [
+       60.1,
+       17.5
+      ],
+      "l_wrist": [
+       86.0,
+       164.7
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "r_upper_arm",
+   "layer": "front",
+   "views": [
+    {
+     "file": "r_upper_arm.png",
+     "size": [
+      303,
+      320
+     ],
+     "anchors": {
+      "r_shoulder": [
+       197.5,
+       -29.2
+      ],
+      "r_elbow": [
+       101.6,
+       335.2
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "r_forearm",
+   "layer": "front",
+   "views": [
+    {
+     "file": "r_forearm.png",
+     "size": [
+      167,
+      320
+     ],
+     "anchors": {
+      "r_elbow": [
+       106.9,
+       17.6
+      ],
+      "r_wrist": [
+       80.9,
+       164.8
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "head",
+   "layer": "front",
+   "views": [
+    {
+     "file": "head.png",
+     "size": [
+      243,
+      320
+     ],
+     "anchors": {
+      "l_ear": [
+       191.3,
+       191.0
+      ],
+      "r_ear": [
+       51.7,
+       191.0
+      ]
+     },
+     "ratio": 0.0,
+     "scale_ref": {
+      "l_shoulder": [
+       230.1,
+       311.3
+      ],
+      "r_shoulder": [
+       12.9,
+       311.3
+      ]
+     }
+    },
+    {
+     "file": "head_a.png",
+     "size": [
+      320,
+      280
+     ],
+     "anchors": {
+      "l_ear": [
+       210.1,
+       167.2
+      ],
+      "r_ear": [
+       109.9,
+       167.2
+      ]
+     },
+     "ratio": 0.195,
+     "scale_ref": {
+      "l_shoulder": [
+       255.1,
+       272.5
+      ],
+      "r_shoulder": [
+       64.9,
+       272.5
+      ]
+     }
+    },
+    {
+     "file": "head_b.png",
+     "size": [
+      320,
+      280
+     ],
+     "anchors": {
+      "l_ear": [
+       210.1,
+       167.2
+      ],
+      "r_ear": [
+       109.9,
+       167.2
+      ]
+     },
+     "ratio": -0.195,
+     "scale_ref": {
+      "l_shoulder": [
+       255.1,
+       272.5
+      ],
+      "r_shoulder": [
+       64.9,
+       272.5
+      ]
+     }
+    }
+   ],
+   "min_vis": 0.3
+  }
+ ]
+}

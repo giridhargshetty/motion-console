@@ -99,7 +99,7 @@ result_seconds = 2.0 # on the result screen before hands-up returns to the boxer
 crowd_volume = 0.35  # the crowd murmur under the fight, 0..1 (cheers and punches are separate)
 
 [dressup]            # Dress Up: a magic mirror with costumes that follow you (art: tools/blender/render_costume.py)
-costumes = ["knight", "dark_knight", "viking", "gladiator", "archer", "royal", "pirate", "wizard", "superhero"]  # picker order (3 per row)
+costumes = ["knight", "dark_knight", "viking", "gladiator", "archer", "royal", "pirate", "wizard", "superhero", "zombie"]  # picker order
 person_mask = true   # cut the player out of the room (pose model's outline, a few ms); false = camera window
 scene = true         # each costume's backdrop behind the player
 min_visibility = 0.5 # a piece hides when the body points it hangs on are seen less than this

@@ -278,6 +278,92 @@ def held(name, side, length, grip, **kw):
     return model(name, length=length, at=(0.5, 0.5, grip), to=hand(side), along=forearm_dir(side), **kw)
 
 
+# Kenney's animated character (CC0): one blocky body in a T-pose, every vertex weighted to a named
+# bone. Cut into body parts by bone and mapped joint-to-joint onto the reference body, it makes a
+# whole-body costume (the zombie). Joints are the bones' heads in the model (its left is +x, facing -y
+# like the reference body).
+KJ = {"l_shoulder": (0.336, 2.359), "r_shoulder": (-0.335, 2.359), "l_elbow": (0.805, 2.317),
+      "r_elbow": (-0.805, 2.317), "l_wrist": (1.329, 2.276), "r_wrist": (-1.329, 2.276),
+      "l_hip": (0.202, 1.301), "r_hip": (-0.202, 1.301), "mid_hip": (0.0, 1.301),
+      "l_knee": (0.274, 0.78), "r_knee": (-0.274, 0.78), "l_ankle": (0.303, 0.193), "r_ankle": (-0.303, 0.193)}
+
+
+def kenney_part(groups, material):
+    """Kenney's character, only the vertices mostly weighted to these bones, in its own T-pose
+    coordinates and with `material` (its own imports invisible)."""
+    before = set(bpy.data.objects)
+    bpy.ops.import_scene.fbx(filepath=str(MODELS / "kenney" / "characterMedium.fbx"))
+    new = [o for o in bpy.data.objects if o not in before]
+    body = next(o for o in new if o.type == "MESH" and o.vertex_groups)
+    bpy.context.view_layer.update()
+    world = body.matrix_world.copy()
+    body.parent = None
+    body.matrix_world = world
+    body.modifiers.clear()
+    for o in new:
+        if o is not body:
+            bpy.data.objects.remove(o, do_unlink=True)
+    names = {g.index: g.name for g in body.vertex_groups}
+    bm = bmesh.new()
+    bm.from_mesh(body.data)
+    layer = bm.verts.layers.deform.verify()
+    drop = [v for v in bm.verts if not v[layer] or names[max(v[layer].items(), key=lambda kv: kv[1])[0]] not in groups]
+    bmesh.ops.delete(bm, geom=drop, context="VERTS")
+    bm.to_mesh(body.data)
+    bm.free()
+    body.data.materials.clear()
+    body.data.materials.append(material)
+    return body
+
+
+def kenney_skin(name):
+    """A material showing one of Kenney's skin textures, kept crisp (pixel art)."""
+    m = bpy.data.materials.get(f"kenney_{name}")
+    if m is None:
+        m = bpy.data.materials.new(f"kenney_{name}")
+        if m.node_tree is None:
+            m.use_nodes = True
+        nt = m.node_tree
+        tex = nt.nodes.new("ShaderNodeTexImage")
+        tex.image = bpy.data.images.load(str(MODELS / "kenney" / f"{name}.png"))
+        tex.interpolation = "Closest"
+        b = nt.nodes["Principled BSDF"]
+        nt.links.new(tex.outputs["Color"], b.inputs["Base Color"])
+        b.inputs["Roughness"].default_value = 0.85
+    return m
+
+
+def map_segment(o, a, b, fill=False):
+    """Turn and scale a limb (rotating in the front plane) so its joints a -> b land on the
+    reference body's a -> b. fill: use the part's own top and bottom instead of the joints, so it
+    covers the whole segment (the stubby shorts on the thighs)."""
+    (ax, az), (bx, bz) = KJ[a], KJ[b]
+    A, B = J[a], J[b]
+    width = math.hypot(B.x - A.x, B.z - A.z) / math.hypot(bx - ax, bz - az)  # thickness keeps the joints' scale
+    if fill:  # (a vertical part, like a thigh: stretch its height only)
+        bpy.context.view_layer.update()
+        lo, hi = bounds([o])
+        cx = (lo.x + hi.x) / 2
+        (ax, az), (bx, bz) = (cx, hi.z), (cx, lo.z)
+    src = math.atan2(bz - az, bx - ax)
+    dst = math.atan2(B.z - A.z, B.x - A.x)
+    k = math.hypot(B.x - A.x, B.z - A.z) / math.hypot(bx - ax, bz - az)
+    R = Matrix.Rotation(-(dst - src), 4, "Y")  # +angle in x/z is a -rotation about y
+    S = Matrix.Diagonal((width, width, k, 1)) if fill else Matrix.Diagonal((k, k, k, 1))
+    o.matrix_world = Matrix.Translation(A) @ R @ S @ Matrix.Translation((-ax, 0, -az)) @ o.matrix_world
+    return o
+
+
+def map_torso(o):
+    """Stretch the torso so its shoulders and hips land on the reference body's."""
+    (lx, lz), (hx, hz) = KJ["l_shoulder"], KJ["mid_hip"]
+    kx = J["l_shoulder"].x / lx
+    kz = (J["l_shoulder"].z - J["mid_hip"].z) / (lz - hz)
+    o.matrix_world = (Matrix.Translation(J["mid_hip"]) @ Matrix.Diagonal((kx, kx, kz, 1)) @ Matrix.Translation((0, 0, -hz))
+                      @ o.matrix_world)
+    return o
+
+
 def cape_sheet(material, top=0.9, bottom=0.28, half_top=0.17, half_bottom=0.34, collar=True):
     """A cape hanging behind the shoulders, with folds."""
     mesh = bpy.data.meshes.new("cape")
@@ -642,8 +728,40 @@ def archer():
     return "ARCHER", pieces, meadow
 
 
+def zombie():
+    """Kenney's zombie (green skin, torn plaid shirt): the whole body as a costume, cut by bone."""
+    skin = kenney_skin("zombieMaleA")
+    torso_bones = {"Hips", "Spine", "Chest", "UpperChest", "Neck", "LeftShoulder", "RightShoulder"}
+
+    def head():  # the big blocky zombie head over the player's own, like a mask
+        o = kenney_part({"Head"}, skin)
+        bpy.context.view_layer.update()
+        lo, hi = bounds([o])
+        k = 0.29 / (hi.x - lo.x)
+        c = (lo + hi) / 2
+        o.matrix_world = (Matrix.Translation(HEAD + Vector((0, 0, 0.035))) @ Matrix.Diagonal((k, k, k, 1))
+                          @ Matrix.Translation(-c) @ o.matrix_world)
+        return [o]
+
+    def limb(bones, a, b, fill=False):
+        return lambda: [map_segment(kenney_part(bones, skin), a, b, fill)]
+
+    pieces = [("torso", lambda: [map_torso(kenney_part(torso_bones, skin))], ["l_shoulder", "r_shoulder", "mid_hip"], {})]
+    for side, name in (("l", "Left"), ("r", "Right")):
+        pieces += [(f"{side}_thigh", limb({f"{name}UpLeg"}, f"{side}_hip", f"{side}_knee", fill=True), [f"{side}_hip", f"{side}_knee"], {}),
+                   (f"{side}_shin", limb({f"{name}Leg", f"{name}Foot", f"{name}Toes"}, f"{side}_knee", f"{side}_ankle"),
+                    [f"{side}_knee", f"{side}_ankle"], {})]
+    for side, name in (("l", "Left"), ("r", "Right")):
+        hand_bones = {f"{name}ForeArm", f"{name}Hand"} | {f"{name}Hand{f}{i}" for f in ("Index", "Thumb") for i in (1, 2, 3)}
+        pieces += [(f"{side}_upper_arm", limb({f"{name}Arm"}, f"{side}_shoulder", f"{side}_elbow"),
+                    [f"{side}_shoulder", f"{side}_elbow"], {}),
+                   (f"{side}_forearm", limb(hand_bones, f"{side}_elbow", f"{side}_wrist"), [f"{side}_elbow", f"{side}_wrist"], {})]
+    pieces.append(("head", head, ["l_ear", "r_ear"], {"yaw": True, "min_vis": 0.3}))
+    return "ZOMBIE", pieces, graveyard
+
+
 COSTUMES = {"knight": knight, "dark_knight": dark_knight, "viking": viking, "gladiator": gladiator, "archer": archer,
-            "royal": royal, "pirate": pirate, "wizard": wizard, "superhero": superhero}
+            "royal": royal, "pirate": pirate, "wizard": wizard, "superhero": superhero, "zombie": zombie}
 
 
 # ---------------------------------------------------------------- scenes (backdrops)
@@ -818,6 +936,45 @@ def meadow(rng):
     flower = [mat(f"flower{i}", c, emit=0.3) for i, c in enumerate(((1, 0.9, 0.2), (1, 0.4, 0.6), (0.9, 0.9, 1)))]
     for _ in range(60):
         sphere((rng.uniform(-8, 8), rng.uniform(0, 6), 0.05), 0.07, flower[rng.randrange(3)], segs=8)
+
+
+def graveyard(rng):
+    sky((0.03, 0.08, 0.06), (0.15, 0.3, 0.2), 0.8)
+    sun((0.3, 1, -0.5), 0.7, (0.6, 1.0, 0.7))
+    stars(90, 25, 8, 16, 30, rng)
+    sphere((7, 28, 11), 1.9, mat("green_moon", (0.85, 1.0, 0.8), emit=3), segs=24)
+    ground((0.1, 0.17, 0.1))
+    stone = mat("grave_stone", (0.45, 0.47, 0.48), rough=0.95)
+    mossy = mat("grave_moss", (0.3, 0.4, 0.28), rough=0.95)
+    for i in range(16):  # gravestones, some leaning
+        x, y = rng.uniform(-9, 9), rng.uniform(3, 12)
+        if abs(x) < 2.2 and y < 6:
+            continue
+        lean = (rng.uniform(-0.15, 0.15), rng.uniform(-0.2, 0.2), 0)
+        m = stone if i % 3 else mossy
+        if i % 4 == 0:  # a cross
+            box((x, y, 0.6), (0.15, 0.12, 1.2), m, bevel=0.02, rot=lean)
+            box((x, y, 0.85), (0.6, 0.12, 0.15), m, bevel=0.02, rot=lean)
+        else:
+            box((x, y, 0.4), (0.7, 0.18, 0.8), m, bevel=0.03, rot=lean)
+            tube((x, y - 0.09, 0.8), (x, y + 0.09, 0.8), 0.35, 0.35, m, 24).rotation_euler = (math.radians(90), lean[1], 0)
+    bark = mat("dead_wood", (0.18, 0.13, 0.1), rough=0.9)
+    for x, y in ((-7, 10), (8, 13), (-11, 15)):  # bare trees
+        tube((x, y, 0), (x, y, 4), 0.3, 0.12, bark, 10)
+        for k in range(5):
+            a = rng.uniform(0, math.tau)
+            start = Vector((x, y, rng.uniform(2, 3.8)))
+            tube(start, start + Vector((math.cos(a) * 1.4, 0, rng.uniform(0.3, 1.2))), 0.09, 0.02, bark, 8)
+    for x in range(-12, 13):  # iron fence
+        tube((x * 0.8, 16, 0), (x * 0.8, 16, 1.6), 0.04, 0.04, mat("iron", (0.05, 0.05, 0.06), metal=0.6), 8)
+    box((0, 16, 1.4), (20, 0.05, 0.06), mat("iron", (0.05, 0.05, 0.06), metal=0.6), bevel=0)
+    for _ in range(5):
+        model("Skull", width=0.35, at=(0.5, 0.5, 0.0), to=(rng.uniform(-6, 6), rng.uniform(1.5, 5), 0.0),
+              spin=rng.uniform(-40, 40))
+    glow = mat("wisp", (0.5, 1.0, 0.5), emit=8)
+    for _ in range(30):
+        sphere((rng.uniform(-8, 8), rng.uniform(2, 10), rng.uniform(0.2, 2.5)), 0.04, glow, segs=8)
+    point((0, 4, 1.5), 300, (0.4, 1.0, 0.5), 2.0)
 
 
 def city(rng):

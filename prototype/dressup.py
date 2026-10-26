@@ -13,7 +13,7 @@ import math
 import effects
 from dressup_fit import Smoother
 
-COLS = 3
+COLS = 3          # costumes per picker row; 4 once there are more than 9 (see cols)
 SPARKLE_COLORS = ((255, 240, 150), (255, 170, 60), (150, 220, 255), (255, 150, 230))
 
 
@@ -52,6 +52,11 @@ class DressUp:
         return self.costumes[self.current] if self.costumes else None
 
     @property
+    def cols(self):
+        """Picker tiles per row: 3 (up to a 3x3 grid), 4 beyond that so tiles stay big."""
+        return COLS if len(self.costumes) <= COLS * COLS else COLS + 1
+
+    @property
     def frozen(self):
         return self.t < self.freeze_until
 
@@ -63,11 +68,11 @@ class DressUp:
         """Pickable areas in 0..1 of the screen, pointed at with a raised hand (lobby.pointers())."""
         if self.state == "pick":
             u0, v0, u1, v1, gap = 0.06, 0.2, 0.94, 0.86, 0.03
-            rows = max(1, math.ceil(len(self.costumes) / COLS))
-            w = (u1 - u0 - gap * (COLS - 1)) / COLS
+            rows = max(1, math.ceil(len(self.costumes) / self.cols))
+            w = (u1 - u0 - gap * (self.cols - 1)) / self.cols
             h = (v1 - v0 - gap * (rows - 1)) / rows
-            out = {f"c{i}": (u0 + (i % COLS) * (w + gap), v0 + (i // COLS) * (h + gap),
-                             u0 + (i % COLS) * (w + gap) + w, v0 + (i // COLS) * (h + gap) + h)
+            out = {f"c{i}": (u0 + (i % self.cols) * (w + gap), v0 + (i // self.cols) * (h + gap),
+                             u0 + (i % self.cols) * (w + gap) + w, v0 + (i // self.cols) * (h + gap) + h)
                    for i in range(len(self.costumes))}
             out["home"] = (0.04, 0.03, 0.3, 0.13)
             return out
@@ -90,9 +95,9 @@ class DressUp:
             elif key == pygame.K_RIGHT:
                 self.focus = (self.focus + 1) % n
             elif key == pygame.K_UP:
-                self.focus = (self.focus - COLS) % n
+                self.focus = (self.focus - self.cols) % n
             elif key == pygame.K_DOWN:
-                self.focus = (self.focus + COLS) % n
+                self.focus = (self.focus + self.cols) % n
             elif key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                 self.wear(self.focus)
         elif self.state == "wear":
