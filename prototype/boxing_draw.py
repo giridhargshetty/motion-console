@@ -1,8 +1,8 @@
 """Drawing for the boxing game (rules in boxing.py): first person in a boxing ring.
 
 The boxer faces you in the middle; your gloves follow your real hands in the foreground; your
-camera picture is a small window in the corner. The boxer is a sprite animation once
-tools/blender/render_boxer.py has rendered it (assets/boxers/<sprite>/), otherwise drawn shapes.
+camera picture is a small window in the corner. The boxer is a sprite animation rendered by
+tools/blender/render_boxer.py (assets/boxers/<sprite>/); boxers not rendered yet borrow another's.
 Uses the Fruit Slice renderer for the backdrop, side panels' frame, hover boxes and fonts.
 """
 
@@ -17,8 +17,18 @@ import sprites
 import theme
 
 GLOVE_BLUE = (40, 110, 230)
-GLOVE_RED = (210, 35, 40)
 WARN = (255, 200, 60)
+
+
+def boxer_sprites(spec):
+    """Sprite frames for this boxer; one that isn't rendered yet borrows the first rendered boxer's."""
+    frames = sprites.load(spec["sprite"])
+    if frames is None:
+        for meta in sorted(sprites.ASSETS.glob("*/meta.json")):
+            frames = sprites.load(meta.parent.name)
+            if frames is not None:
+                break
+    return frames
 
 
 class BoxingRenderer:
@@ -73,103 +83,24 @@ class BoxingRenderer:
             pygame.draw.ellipse(surf, tuple(min(255, c + 90) for c in color),
                                 pygame.Rect(cx - r * 0.45, cy - r * 0.7, r * 0.55, r * 0.35))
 
-    def draw_boxer_shapes(self, surf, cx, base_y, s, opp, t):
-        """Placeholder boxer (until sprites exist), sized by s (pixels per screen-height)."""
-        spec = opp.spec
-        skin, shirt = tuple(spec["skin"]), tuple(spec["shirt"])
-        st, since = opp.state, t - opp.t_state
-        bob = math.sin(t * 3.0) * s * 0.008
-        tilt = 0.0
-        drop = 0.0
-        if st == "stunned":
-            tilt = math.sin(since * 25) * 0.04 * s
-        if st == "ko":
-            drop = min(1.0, since / 0.8) * s * 0.35
-        head = (cx + tilt, base_y - s * 0.62 + bob + drop)
-        hr = s * 0.085
-        shoulders_y = head[1] + hr * 1.3
-        sw = s * 0.17
-        # body
-        torso = [(cx - sw, shoulders_y), (cx + sw, shoulders_y),
-                 (cx + sw * 0.75, base_y + drop), (cx - sw * 0.75, base_y + drop)]
-        pygame.draw.polygon(surf, skin, torso)
-        trunks = pygame.Rect(0, 0, sw * 1.6, s * 0.12)
-        trunks.midtop = (cx, base_y - s * 0.1 + drop)
-        pygame.draw.rect(surf, shirt, trunks, border_radius=int(s * 0.02))
-        pygame.draw.circle(surf, skin, head, hr)
-        # face
-        eye_y = head[1] - hr * 0.1
-        dazed = st in ("stunned", "ko")
-        for dx in (-0.35, 0.35):
-            ex = head[0] + dx * hr
-            if dazed:
-                pygame.draw.line(surf, (30, 20, 20), (ex - 4, eye_y - 4), (ex + 4, eye_y + 4), 3)
-                pygame.draw.line(surf, (30, 20, 20), (ex - 4, eye_y + 4), (ex + 4, eye_y - 4), 3)
-            else:
-                pygame.draw.circle(surf, (30, 20, 20), (ex, eye_y), max(2, hr * 0.12))
-        brow = 6 if st in ("windup", "punch") else 2
-        for dx in (-0.35, 0.35):
-            pygame.draw.line(surf, (40, 25, 20), (head[0] + (dx - 0.18) * hr, eye_y - hr * 0.3 - (brow if dx < 0 else 0)),
-                             (head[0] + (dx + 0.18) * hr, eye_y - hr * 0.3 - (0 if dx < 0 else brow)), 3)
-        mouth = pygame.Rect(0, 0, hr * 0.5, hr * 0.18)
-        mouth.center = (head[0], head[1] + hr * 0.45)
-        pygame.draw.rect(surf, (120, 40, 40), mouth, border_radius=3)
-        if st == "stunned":  # stars
-            for k in range(3):
-                a = since * 6 + k * 2.1
-                pygame.draw.circle(surf, (255, 230, 80), (head[0] + math.cos(a) * hr * 1.4,
-                                                          head[1] - hr * 1.2 + math.sin(a) * hr * 0.3), hr * 0.15)
-        # gloves: position by state (as you see them: "left" is on your left)
-        rest = {"left": (cx - sw * 0.75, shoulders_y + s * 0.09), "right": (cx + sw * 0.75, shoulders_y + s * 0.09)}
-        gr = {"left": s * 0.06, "right": s * 0.06}
-        pos = dict(rest)
-        if st == "guard":
-            pos = {"left": (cx - hr * 0.55, head[1] + hr * 0.3), "right": (cx + hr * 0.55, head[1] + hr * 0.3)}
-            gr = {"left": s * 0.07, "right": s * 0.07}
-        elif st == "cheer":
-            pos = {"left": (cx - sw * 0.9, head[1] - hr * 1.6), "right": (cx + sw * 0.9, head[1] - hr * 1.6)}
-        elif st in ("windup", "punch", "recover"):
-            side = opp.side
-            sign = -1 if side == "left" else 1
-            if st == "windup":
-                pull = min(1.0, since / max(0.01, opp.spec["windup"] * 0.5))
-                pos[side] = (cx + sign * sw * (0.8 + 0.4 * pull), shoulders_y - s * 0.02 * pull)
-                gr[side] = s * 0.055
-            elif st == "punch":
-                k = min(1.0, since / (opp.PUNCH_TIME * 0.5))
-                pos[side] = (cx + sign * s * 0.02, head[1] + hr * (1.5 + 1.0 * k))
-                gr[side] = s * (0.07 + 0.14 * k)  # coming at you
-            else:
-                pos[side] = (cx + sign * sw * 0.6, shoulders_y + s * 0.06)
-        for side in ("left", "right"):
-            shoulder = (cx + (-1 if side == "left" else 1) * sw * 0.9, shoulders_y + s * 0.02)
-            pygame.draw.line(surf, skin, shoulder, pos[side], max(4, int(s * 0.045)))
-        for side in ("left", "right"):
-            if st == "windup" and side == opp.side:  # the warning: pulsing glow round the punching glove
-                pulse = 0.5 + 0.5 * math.sin(t * 18)
-                pygame.draw.circle(surf, WARN, pos[side], gr[side] * (1.5 + 0.3 * pulse), max(3, int(s * 0.008)))
-            self.glove(surf, (int(pos[side][0]), int(pos[side][1])), gr[side], GLOVE_RED)
-        return head, hr
-
     def draw_boxer(self, surf, cx, base_y, s, opp, t):
-        """The boxer: sprite frames if rendered, else shapes. Returns the head position and radius."""
-        frames = sprites.load(opp.spec["sprite"])
-        if frames is not None:
-            since = t - opp.t_state
-            anim = {"idle": "idle", "guard": "block", "windup": "idle", "punch": "jab" if opp.side == "left" else "cross",
-                    "recover": "idle", "stunned": "hit_head", "ko": "knockout", "cheer": "victory"}[opp.state]
-            if not frames.has(anim):
-                anim = "idle"
-            img = frames.frame(anim, since, s * 0.95, loop=opp.state in ("idle", "guard", "windup", "recover"))
-            if img is not None:
-                r = img.get_rect(midbottom=(cx, base_y + s * 0.05))
-                surf.blit(img, r)
-                head = (cx, r.y + r.h * 0.12)
-                if opp.state == "windup":
-                    pulse = 0.5 + 0.5 * math.sin(t * 18)
-                    pygame.draw.rect(surf, WARN, r.inflate(10, 10), max(3, int(3 + 4 * pulse)), border_radius=12)
-                return head, s * 0.08
-        return self.draw_boxer_shapes(surf, cx, base_y, s, opp, t)
+        """The boxer's sprite animation, standing on base_y, sized by s (pixels per screen-height)."""
+        frames = boxer_sprites(opp.spec)
+        if frames is None:
+            return
+        since = t - opp.t_state
+        anim = {"idle": "idle", "guard": "block", "windup": "idle", "punch": "jab" if opp.side == "left" else "cross",
+                "recover": "idle", "stunned": "hit_head", "ko": "knockout", "cheer": "victory"}[opp.state]
+        if not frames.has(anim):
+            anim = "idle"
+        img = frames.frame(anim, since, s * 0.95, loop=opp.state in ("idle", "guard", "windup", "recover"))
+        if img is None:
+            return
+        r = img.get_rect(midbottom=(cx, base_y + s * 0.05))
+        surf.blit(img, r)
+        if opp.state == "windup":  # the warning: pulsing frame round the boxer
+            pulse = 0.5 + 0.5 * math.sin(t * 18)
+            pygame.draw.rect(surf, WARN, r.inflate(10, 10), max(3, int(3 + 4 * pulse)), border_radius=12)
 
     # ---------------------------------------------------------------- frame
 
@@ -247,13 +178,14 @@ class BoxingRenderer:
             zones = g.zones()
             for i, spec in enumerate(g.boxers):
                 def face(cx, cy, size, spec=spec):
-                    pygame.draw.circle(base.layer, (*spec["skin"], 255), (cx, cy), size * 0.42)
-                    for dx in (-0.15, 0.15):
-                        pygame.draw.circle(base.layer, (30, 20, 20, 255), (cx + dx * size, cy - size * 0.05),
-                                           max(2, size * 0.05))
-                    band = pygame.Rect(0, 0, size * 0.8, size * 0.14)
-                    band.center = (cx, cy - size * 0.28)
-                    pygame.draw.rect(base.layer, (*spec["shirt"], 255), band, border_radius=4)
+                    frames = boxer_sprites(spec)
+                    img = frames and frames.frame("idle", 0, size * 2.4)
+                    if img is not None:
+                        # Head and gloves only: the frame has room round the boxer for knockouts.
+                        h = img.get_height()
+                        crop = pygame.Rect(0, int(h * 0.2), int(size * 1.2), int(h * 0.4))
+                        crop.centerx = img.get_width() // 2
+                        base.layer.blit(img, (cx - crop.w / 2, cy - crop.h / 2), crop)
                 level = ("easy", "medium", "hard")[min(i, 2)]
                 base.choice_box(screen, rect, g, f"boxer{i}", zones[f"boxer{i}"], to_layer, s, spec["name"],
                                 [level, f"wins {g.wins(i)}"], face)
