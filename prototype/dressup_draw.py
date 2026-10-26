@@ -2,7 +2,9 @@
 
 Each frame while wearing: the costume's scene, the pieces that hang behind the player (a cape), the
 player cut out of the camera picture with the pose model's person mask, then the pieces in front,
-each warped onto the body (dressup_fit.fit). Without a mask yet (the first frames, or if it's off
+each warped onto the body (dressup_fit.fit). Loose parts move on springs: capes and robes are drawn
+in strips whose hems trail behind the body and flare out when the player spins; plumes and the
+wizard's hat tip wobble about their base. Without a mask yet (the first frames, or if it's off
 in the config) the camera picture shows as a window in the middle and only the front pieces draw.
 
 The camera band keeps its own proportions (no stretching), so pieces land exactly on the body:
@@ -88,6 +90,27 @@ def warp(screen, img, M, fmt):
     screen.blit(pygame.image.frombuffer(out.tobytes(), (X1 - X0, Y1 - Y0), fmt), (X0, Y0))
 
 
+def warp_quad(screen, img, src, dst, fmt):
+    """Draw the part of a picture inside the rectangle src (4 corners, rows of img) stretched onto the
+    screen quad dst. Neighbouring strips share their edges exactly, so a cape drawn in strips has
+    no seams."""
+    ya, yb = int(src[0][1]), int(math.ceil(src[2][1]))
+    sub = img[ya:yb]
+    if sub.shape[0] < 1:
+        return
+    s = np.float32([(x, y - ya) for x, y in src])
+    d = np.float32(dst)
+    sw, sh = screen.get_size()
+    X0, Y0 = max(0, int(d[:, 0].min())), max(0, int(d[:, 1].min()))
+    X1, Y1 = min(sw, int(math.ceil(d[:, 0].max())) + 1), min(sh, int(math.ceil(d[:, 1].max())) + 1)
+    if X1 - X0 < 2 or Y1 - Y0 < 2:
+        return
+    H = cv2.getPerspectiveTransform(s, d - np.float32([X0, Y0]))
+    out = cv2.warpPerspective(sub, H, (X1 - X0, Y1 - Y0), flags=cv2.INTER_LINEAR,
+                              borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0, 0))
+    screen.blit(pygame.image.frombuffer(out.tobytes(), (X1 - X0, Y1 - Y0), fmt), (X0, Y0))
+
+
 class DressUpRenderer:
     def __init__(self, base, cfg):
         self.base = base            # fruit_slice.Renderer: only its debug switch is used
@@ -99,6 +122,11 @@ class DressUpRenderer:
         self.person_masked = False
         self.bg = None
         self.fmt = "RGBA"           # set to the screen's byte order on the first frame
+        self.springs = {}           # piece name -> Spring, for the costume being worn
+        self.worn = None            # (costume, when it was put on): new springs when it changes
+        self.t = None               # last frame's game time
+        self.yaw = None             # smoothed shoulder turn, for the spin flare
+        self.flare = 0.0            # how far robes spread out (0 = hanging straight)
 
     # ---------------------------------------------------------------- assets
 
@@ -148,6 +176,12 @@ class DressUpRenderer:
             return int(x0 + x * H), int(y * H)
 
         meta = self.costume(g.key)
+        dt = 0.0 if self.t is None or g.frozen else min(0.1, max(0.0, g.t - self.t))  # a photo holds still
+        self.t = g.t
+        if self.worn != (g.key, g.changed_t):
+            self.worn, self.springs, self.flare = (g.key, g.changed_t), {}, 0.0
+        self.spin(g.kp, dt, d)
+        self.dt, self.now, self.d = dt, g.t, d
         if d["scene"]:
             screen.blit(self.scene(g.key, (W, H)), (0, 0))
         else:
@@ -194,8 +228,69 @@ class DressUpRenderer:
             view = df.pick_view(piece["views"], ratio)
             M = df.fit(view["anchors"], kp, to_screen, piece.get("min_vis", min_vis), piece.get("rotate", 1.0),
                        view.get("scale_ref"))
-            if M is not None:
+            if M is None:
+                continue
+            if "swing" in piece and "swing_y" in view:
+                self.swinging(screen, piece, view, M)
+            elif piece.get("bob") and "pivot" in view:
+                warp(screen, view["img"], self.wobbled(piece, view, M), self.fmt)
+            else:
                 warp(screen, view["img"], M, self.fmt)
+
+    def spring(self, piece, stiffness, damping):
+        name = piece["name"]
+        if name not in self.springs:
+            self.springs[name] = df.Spring(self.d[stiffness], self.d[damping])
+        return self.springs[name]
+
+    def swinging(self, screen, piece, view, M):
+        """A cape / robe: rigid down to swing_y, then strips whose hem trails behind on a spring."""
+        img = view["img"]
+        h, w = img.shape[:2]
+        scale = math.hypot(M[0, 0], M[1, 0])
+        cx = w / 2
+        hem = M @ np.array([cx, h, 1.0])
+        length = (h - view["swing_y"]) * scale
+        lag = self.spring(piece, "swing_stiffness", "swing_damping").step(hem, self.dt, self.d["swing_max"] * length)
+        sway = piece["swing"].get("sway", 0.0) * length * 4
+        t = self.now
+        lag = lag + (sway * (math.sin(t * 1.7) + 0.4 * math.sin(t * 3.1 + 1.0)), 0.0)  # a little breeze
+        flare = self.flare if piece["swing"].get("flare") else 0.0
+        rows = df.strip_rows(h, view["swing_y"], self.d["swing_strips"])
+        for ya, yb in zip(rows, rows[1:]):
+            yb2 = min(h, yb + 1)  # one row of overlap: no hairline gaps between strips
+            src = [(0, ya), (w, ya), (w, yb2), (0, yb2)]
+            dst = [df.deform(M, x, y, view["swing_y"], h, lag, flare, cx) for x, y in src]
+            warp_quad(screen, img, src, dst, self.fmt)
+
+    def wobbled(self, piece, view, M):
+        """A plume / hat tip: its top lags behind on a stiffer spring, turning it about its base."""
+        px, py = view["pivot"]
+        base = M @ np.array([px, py, 1.0])
+        top = M @ np.array([px, 0.0, 1.0])
+        arm = top - base
+        reach = float(np.hypot(*arm))
+        if reach < 1:
+            return M
+        lag = self.spring(piece, "bob_stiffness", "bob_damping").step(top, self.dt, 0.8 * reach)
+        tip = arm + lag
+        angle = math.atan2(arm[0] * tip[1] - arm[1] * tip[0], arm[0] * tip[0] + arm[1] * tip[1])
+        angle += 0.05 * math.sin(self.now * 2.3)  # never quite still
+        return df.bob(M, (px, py), max(-0.6, min(0.6, angle)))
+
+    def spin(self, kp, dt, d):
+        """Robes flare out while the player spins: from how fast the shoulders turn (their depths)."""
+        yaw = df.torso_yaw(kp, d["min_visibility"])
+        if yaw is None or dt <= 0:
+            self.flare = max(0.0, self.flare - dt * 0.5)
+            return
+        if self.yaw is None:
+            self.yaw = yaw
+        before = self.yaw
+        self.yaw += (yaw - self.yaw) * min(1.0, dt * 8)   # depth is noisy: smooth it first
+        rate = abs(self.yaw - before) / dt                # radians per second
+        target = min(d["flare_max"], d["flare_gain"] * max(0.0, rate - 1.0))
+        self.flare = target if target > self.flare else max(target, self.flare - dt * 0.5)  # quick out, slow back
 
     # ---------------------------------------------------------------- screens
 

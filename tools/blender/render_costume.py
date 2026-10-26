@@ -239,8 +239,10 @@ def knight():
         opening = lambda co: co.z > HEAD.z + 0.035 or (abs(co.x) > 0.075 and co.y < 0.03 and co.z > HEAD.z - 0.09)  # noqa: E731
         return [shell(HEAD + Vector((0, 0.005, 0.01)), 0.118, steel, scale=(1, 1.05, 1.1), keep=opening, thick=0.012),
                 box(HEAD + Vector((0, -0.122, -0.005)), (0.018, 0.012, 0.085), steel, bevel=0.004),
-                ring(HEAD + Vector((0, 0.005, 0.045)), 0.119, 0.009, gold, scale=(1, 1.05, 1)),
-                sphere(HEAD + Vector((0, 0.03, 0.17)), 0.05, red, scale=(0.45, 1.5, 1.1)),
+                ring(HEAD + Vector((0, 0.005, 0.045)), 0.119, 0.009, gold, scale=(1, 1.05, 1))]
+
+    def plume():
+        return [sphere(HEAD + Vector((0, 0.03, 0.17)), 0.05, red, scale=(0.45, 1.5, 1.1)),
                 tube(HEAD + Vector((0, 0.02, 0.12)), HEAD + Vector((0, 0.02, 0.14)), 0.02, 0.012, gold)]
 
     def armour():
@@ -267,7 +269,8 @@ def knight():
         return [blade, tube(h - across * 0.08, h + across * 0.08, 0.012, 0.012, gold, 16),
                 tube(h - d * 0.09, h + d * 0.01, 0.016, 0.016, brown, 16), sphere(h - d * 0.1, 0.022, gold)]
 
-    pieces = [("helmet", helmet, ["l_ear", "r_ear"], {"yaw": True, "min_vis": 0.3}),
+    pieces = [("plume", plume, ["l_ear", "r_ear"], {"yaw": True, "min_vis": 0.3, "bob": HEAD + Vector((0, 0.02, 0.125))}),
+              ("helmet", helmet, ["l_ear", "r_ear"], {"yaw": True, "min_vis": 0.3}),
               ("armour", armour, ["l_shoulder", "r_shoulder", "mid_hip"], {}),
               ("shield", shield, ["l_elbow", "l_wrist"], {}),
               ("sword", sword, ["r_elbow", "r_wrist"], {"sparkle": True})]
@@ -321,7 +324,8 @@ def superhero():
         return [finish(o, red), ring((0, 0.04, 0.9), 1, 0.02, red, scale=(0.16, 0.08, 1))]
 
     pieces = [("mask", mask, ["l_ear", "r_ear"], {"yaw": True, "min_vis": 0.3}),
-              ("cape", cape, ["l_shoulder", "r_shoulder", "mid_hip"], {"layer": "behind"}),
+              ("cape", cape, ["l_shoulder", "r_shoulder", "mid_hip"],
+               {"layer": "behind", "swing": {"from": "l_shoulder", "sway": 0.05}}),
               ("suit", suit, ["l_shoulder", "r_shoulder", "mid_hip"], {})]
     for side, _ in SIDES:
         pieces += [(f"{side}_glove", lambda side=side: glove(side, red), [f"{side}_elbow", f"{side}_wrist"], {}),
@@ -409,7 +413,7 @@ def pirate():
                 tube(h - d * 0.08, h, 0.015, 0.015, brown, 16)]
 
     pieces = [("hat", hat, ["l_ear", "r_ear"], {"yaw": True, "min_vis": 0.3}),
-              ("coat", coat, ["l_shoulder", "r_shoulder", "mid_hip"], {}),
+              ("coat", coat, ["l_shoulder", "r_shoulder", "mid_hip"], {"swing": {"from": "mid_hip", "sway": 0.01}}),
               ("cutlass", cutlass, ["r_elbow", "r_wrist"], {"sparkle": True})]
     for side, _ in SIDES:
         pieces.append((f"{side}_boot", lambda side=side: boot(side, black, top=0.3, cuff=brown), [f"{side}_knee", f"{side}_ankle"], {}))
@@ -450,7 +454,8 @@ def royal():
         return [rod, flat(star(), tip + d * 0.05, 0.015, starlight, scale=0.055)]
 
     pieces = [("crown", crown, ["l_ear", "r_ear"], {"yaw": True, "min_vis": 0.3}),
-              ("gown", gown, ["l_shoulder", "r_shoulder", "mid_hip"], {}),
+              ("gown", gown, ["l_shoulder", "r_shoulder", "mid_hip"],
+               {"swing": {"from": "mid_hip", "sway": 0.012, "flare": True}}),
               ("wand", wand, ["r_elbow", "r_wrist"], {"sparkle": True})]
     return "ROYAL", pieces, ballroom
 
@@ -462,13 +467,17 @@ def wizard():
     wood = mat("wood", (0.35, 0.2, 0.08), rough=0.8)
     orb = mat("orb", (0.4, 0.8, 1.0), emit=5.0, alpha=0.85)
 
-    def hat():
-        brim = HEAD + Vector((0, 0, 0.07))
-        parts = [tube(brim, brim + Vector((0, 0.02, 0.34)), 0.13, 0.0, blue, 48),
-                 sphere(brim, 0.21, blue, scale=(1, 1, 0.07)),
-                 ring(brim + Vector((0, 0, 0.02)), 0.128, 0.012, gold)]
+    brim = HEAD + Vector((0, 0, 0.07))
+
+    def hat_top():
+        parts = [tube(brim, brim + Vector((0, 0.02, 0.34)), 0.13, 0.0, blue, 48)]
         for i, (x, z) in enumerate(((-0.05, 0.08), (0.04, 0.15), (-0.01, 0.23))):
             parts.append(flat(star(), brim + Vector((x, -0.11 + z * 0.33, z)), 0.006, gold, scale=0.022 - 0.004 * i))
+        return parts
+
+    def hat():
+        parts = [sphere(brim, 0.21, blue, scale=(1, 1, 0.07)),
+                 ring(brim + Vector((0, 0, 0.02)), 0.128, 0.012, gold)]
         chin = HEAD + Vector((0, -0.075, -0.05))
         parts.append(tube(chin, chin + Vector((0, -0.01, -0.2)), 0.075, 0.0, beard))
         for side, s in SIDES:
@@ -490,8 +499,10 @@ def wizard():
                 sphere(h + Vector((0, 0, 0.47)), 0.05, orb),
                 ring(h + Vector((0, 0, 0.42)), 0.03, 0.008, gold)]
 
-    pieces = [("hat", hat, ["l_ear", "r_ear"], {"yaw": True, "min_vis": 0.3}),
-              ("robe", robe_piece, ["l_shoulder", "r_shoulder", "mid_hip"], {}),
+    pieces = [("hat_top", hat_top, ["l_ear", "r_ear"], {"yaw": True, "min_vis": 0.3, "bob": brim + Vector((0, 0, 0.03))}),
+              ("hat", hat, ["l_ear", "r_ear"], {"yaw": True, "min_vis": 0.3}),
+              ("robe", robe_piece, ["l_shoulder", "r_shoulder", "mid_hip"],
+               {"swing": {"from": "mid_hip", "sway": 0.012, "flare": True}}),
               ("staff", staff, ["r_elbow", "r_wrist"], {"rotate": 0.0, "sparkle": True})]
     return "WIZARD", pieces, forest
 
@@ -784,11 +795,19 @@ def render_costume(key, out, size, cam, scenes):
                 sl, sr = px(cam, J["l_shoulder"]), px(cam, J["r_shoulder"])
                 view["ratio"] = round((nose[0] - (l[0] + r[0]) / 2) / math.dist(sl, sr), 3)
                 view["scale_ref"] = {"l_shoulder": sl, "r_shoulder": sr}  # steadies the size (ears wobble)
+            if "bob" in opts:    # wobbles about this point (its base)
+                view["pivot"] = px(cam, rot @ opts["bob"])
+            if "swing" in opts:  # rows below this swing and trail behind the body
+                view["swing_y"] = px(cam, J[opts["swing"]["from"]])[1]
             views.append(view)
         piece = {"name": name, "layer": opts.get("layer", "front"), "views": views}
         for k in ("min_vis", "rotate", "sparkle"):
             if k in opts:
                 piece[k] = opts[k]
+        if "bob" in opts:
+            piece["bob"] = True
+        if "swing" in opts:
+            piece["swing"] = {k: v for k, v in opts["swing"].items() if k != "from"}
         meta["pieces"].append(piece)
         print(f"  {key}/{name}: {len(views)} view(s)")
     render_preview(pieces, folder, cam)

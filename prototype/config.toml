@@ -108,6 +108,14 @@ smooth_beta = 8.0        # higher = keeps up with fast moves
 sparkle_speed = 2.5  # swinging a wand / sword faster than this (torso-lengths per second) sparkles
 photo_countdown = 3  # "strike a pose": seconds of 3-2-1
 photo_freeze = 2.5   # ...then the picture holds still this long
+swing_stiffness = 35.0   # capes and robes: spring pulling the hem back under the body (higher = stiffer)
+swing_damping = 4.5      # ...and how fast the swinging dies down (lower = swings longer)
+swing_max = 0.35         # the hem trails at most this fraction of the cape's / robe's length
+swing_strips = 8         # strips a swinging piece is drawn in (more = smoother bend, a little slower)
+bob_stiffness = 80.0     # plumes and the wizard's hat tip: a lighter, quicker wobble
+bob_damping = 6.0
+flare_gain = 0.15        # robes spread out by this much per radian/second of spinning...
+flare_max = 0.45         # ...up to this (0.45 = the hem 45% wider)
 
 # The boxers to choose from. windup = seconds of warning before a punch (longer = easier);
 # guard_chance = how often they cover up (your punches are blocked); attack_every = seconds between attacks.

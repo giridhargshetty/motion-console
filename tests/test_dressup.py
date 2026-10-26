@@ -181,3 +181,50 @@ def test_swinging_a_wand_sparkles_only_for_magic_costumes():
     g.fx.particles.clear()
     run(g, lobby, 0.2)
     assert g.fx.particles and "twinkle" in g.sounds
+
+
+# ---- swinging capes, robes and plumes ----
+
+def test_spring_trails_then_settles():
+    sp = df.Spring(35.0, 4.5)
+    sp.step((0, 0), 1 / 60, 1e9)
+    lag = sp.step((100, 0), 1 / 60, 1e9)               # the body jumps right: the hem lags left
+    assert lag[0] < -90
+    for _ in range(60 * 4):
+        lag = sp.step((100, 0), 1 / 60, 1e9)
+    assert abs(lag[0]) < 1.0                             # ...and settles within a few seconds
+
+
+def test_spring_overshoots_like_cloth():
+    sp = df.Spring(35.0, 4.5)
+    sp.step((0, 0), 1 / 60, 1e9)
+    lags = [sp.step((100, 0), 1 / 60, 1e9)[0] for _ in range(120)]
+    assert max(lags) > 5                                 # swings past the target before settling
+
+
+def test_spring_is_held_on_a_leash():
+    sp = df.Spring(35.0, 4.5)
+    sp.step((0, 0), 1 / 60, 50)
+    lag = sp.step((1000, 0), 1 / 60, 50)
+    assert np.isclose(np.hypot(*lag), 50)
+
+
+def test_deform_keeps_the_attached_part_still_and_moves_the_hem():
+    M = np.array([[2, 0, 10], [0, 2, 20]], dtype=np.float32)
+    assert np.allclose(df.deform(M, 30, 40, 50, 200, (30, 0), 0.4, 50), (70, 100))    # above the hips: rigid
+    assert np.allclose(df.deform(M, 50, 200, 50, 200, (30, 0), 0.0, 50), (140, 420))  # hem: full lag
+    left = df.deform(M, 0, 200, 50, 200, (0, 0), 0.5, 50)
+    assert np.isclose(left[0], 2 * (50 - 50 * 1.5) + 10)                               # flared out
+
+
+def test_strip_rows_cover_the_piece_without_gaps():
+    rows = df.strip_rows(320, 160, 8)
+    assert rows[0] == 0 and rows[1] == 160 and rows[-1] == 320 and len(rows) == 10
+    assert df.strip_rows(320, 0, 4) == [0, 80, 160, 240, 320]
+
+
+def test_bob_turns_about_the_pivot():
+    M = df.similarity((0, 0), (10, 0), (100, 100), (120, 100))
+    T = df.bob(M, (5, 5), 0.5)
+    assert np.allclose(apply(T, (5, 5)), apply(M, (5, 5)), atol=1e-4)  # the base stays on the head
+    assert not np.allclose(apply(T, (5, -40)), apply(M, (5, -40)))     # the tip swings

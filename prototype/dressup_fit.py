@@ -172,6 +172,71 @@ def sparkly(names):
             if any(p.get("sparkle") for p in json.loads((ASSETS / n / "costume.json").read_text())["pieces"])]
 
 
+# ---------------------------------------------------------------- swinging (capes, robes, plumes)
+
+class Spring:
+    """A point chasing a moving target with lag and a little overshoot (damped 2D spring), in
+    screen pixels. step() returns the lag (point minus target): a cape's hem trails by this much
+    when the body moves, swings past and settles when it stops."""
+
+    def __init__(self, stiffness, damping):
+        self.k, self.c = stiffness, damping
+        self.p = self.v = None
+
+    def step(self, target, dt, limit):
+        target = np.asarray(target, dtype=np.float64)
+        if self.p is None or dt <= 0:
+            if self.p is None:
+                self.p, self.v = target.copy(), np.zeros(2)
+            return self.p - target
+        n = max(1, math.ceil(dt / (1 / 120)))  # small steps: steady at any frame rate
+        h = dt / n
+        for _ in range(n):
+            self.v += (self.k * (target - self.p) - self.c * self.v) * h
+            self.p += self.v * h
+        lag = self.p - target
+        d = float(np.hypot(*lag))
+        if d > limit:  # a hard tug can't throw it off the body
+            self.p = target + lag * (limit / d)
+            self.v *= 0.5
+            lag = self.p - target
+        return lag
+
+
+def strip_rows(h, start, n):
+    """Row edges for drawing a swinging piece in strips: one rigid block above `start`, then n
+    strips down to the hem."""
+    start = min(max(0.0, start), h - 1)
+    rows = [0.0] if start > 0 else []
+    return rows + [start + (h - start) * i / n for i in range(n + 1)]
+
+
+def deform(M, x, y, start, h, lag, flare, cx):
+    """Where picture point (x, y) of a swinging piece lands on screen: placed by M, then rows below
+    `start` trail by `lag` (pixels) and spread out by `flare`, more toward the hem."""
+    k = max(0.0, (y - start) / max(1e-6, h - start)) ** 1.5
+    xs = cx + (x - cx) * (1 + flare * k)
+    X = M[0, 0] * xs + M[0, 1] * y + M[0, 2]
+    Y = M[1, 0] * xs + M[1, 1] * y + M[1, 2]
+    return X + lag[0] * k, Y + lag[1] * k
+
+
+def bob(M, pivot, angle):
+    """M turned by `angle` (radians) about the piece's pivot as it lands on screen."""
+    px = M[0, 0] * pivot[0] + M[0, 1] * pivot[1] + M[0, 2]
+    py = M[1, 0] * pivot[0] + M[1, 1] * pivot[1] + M[1, 2]
+    c, s = math.cos(angle), math.sin(angle)
+    R = np.array([[c, -s, px - c * px + s * py], [s, c, py - s * px - c * py], [0, 0, 1]])
+    return (R @ np.vstack([M, [0, 0, 1]]))[:2].astype(np.float32)
+
+
+def torso_yaw(kp, min_vis):
+    """How far the shoulders are turned from facing the camera (radians), from their depths."""
+    if kp is None or min(kp[11][2], kp[12][2]) < min_vis or len(kp[11]) < 4:
+        return None
+    return math.atan2(kp[11][3] - kp[12][3], abs(kp[11][0] - kp[12][0]) + 1e-6)
+
+
 class Smoother:
     """One Euro filter on every keypoint's x and y, so pieces sit still when the player does."""
 
