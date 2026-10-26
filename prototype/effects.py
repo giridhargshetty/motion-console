@@ -82,6 +82,15 @@ class Effects:
                 random.uniform(0.4, 1.0) if fire else random.uniform(0.6, 1.1),
                 grav=0.2 if fire else -0.15))
 
+    def confetti(self, x, y, n=10):
+        """Paper bits that flutter down slowly (a win)."""
+        for _ in range(n):
+            self.particles.append(Particle(
+                x + random.uniform(-0.05, 0.05), y, random.uniform(-0.25, 0.25), random.uniform(0.0, 0.3),
+                random.uniform(0.006, 0.012),
+                random.choice([(255, 215, 60), (240, 70, 80), (80, 170, 255), (110, 230, 120), (255, 255, 255)]),
+                random.uniform(2.0, 3.0), grav=0.12))
+
     def sparks(self, x, y):
         for _ in range(2):
             a = random.uniform(0, 2 * math.pi)

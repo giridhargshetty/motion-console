@@ -6,7 +6,7 @@ no drawing (see boxing_draw.py).
 Your punches: a hand moving fast toward the boxer (or toward the camera, from MediaPipe's depth)
 lands, unless the boxer is covering up. Your defence: when the boxer winds up (glove glows),
 cover up with both gloves in front of your face, or dodge by leaning or ducking out of the way.
-Land [boxing] hits_to_win punches to win; take hits_to_lose and you lose.
+Land [boxing] hits_to_win punches to win; take hits_to_lose and you lose (the two health bars).
 
 Tracking comes from the console's lobby (fruit_slice.Game): BLUE's keypoints, hands and torso.
 The gesture checks are pure functions of keypoints, so they're unit-tested without a camera.
@@ -184,7 +184,7 @@ class Boxing:
 
     def zones(self):
         a = self.lobby.aspect
-        out = {f"boxer{i}": ((0.03 + 0.32 * i) * a, 0.14, (0.31 + 0.32 * i) * a, 0.46)
+        out = {f"boxer{i}": ((0.03 + 0.32 * i) * a, 0.18, (0.31 + 0.32 * i) * a, 0.7)
                for i in range(len(self.boxers))}
         out["games"] = (0.05 * a, 0.015, 0.47 * a, 0.09)
         out["settings"] = (0.53 * a, 0.015, 0.95 * a, 0.09)
@@ -264,7 +264,7 @@ class Boxing:
             self.hand_prev = [None, None]
             self.opponent.start(self.t)
             self.goto("fight")
-            self.sounds.append("bell")
+            self.sounds += ["bell", "crowd_cheer"]
             self.say("FIGHT!", (120, 255, 140), 0.8)
 
     def _fight(self, dt, fresh):
@@ -280,6 +280,7 @@ class Boxing:
             self.resolve_incoming()
         elif opp.state == "windup" and self.head_at_windup is None:
             self.head_at_windup = head(self.me.kp)
+            self.sounds.append("warn")
         if self.state == "fight" and fresh:
             self.check_punches()
 
@@ -298,7 +299,7 @@ class Boxing:
             self.taken += 1
             self.hurt_until = self.t + 0.35
             self.fx.shake = 0.03
-            self.sounds.append("hit")
+            self.sounds += ["hit", "crowd_ooh"]
             if self.taken >= b["hits_to_lose"]:
                 self.opponent.go("cheer", self.t)
                 self.finish(won=False)
@@ -347,25 +348,31 @@ class Boxing:
         opp.take_hit(self.t, b["hit_immunity"])
         a = self.lobby.aspect
         self.fx.juice(TARGET[0] * a, TARGET[1], (255, 230, 120), 0, 0, 12)
-        self.sounds.append("punch")
         if self.landed >= b["hits_to_win"]:
+            self.sounds.append("ko_punch")
             opp.go("ko", self.t)
             self.finish(won=True)
-        else:
-            self.say("COUNTER!" if counter else ("HOOK!" if kind == "hook" else "POW!"),
-                     (255, 220, 90) if counter else (255, 255, 255))
+            return
+        self.sounds.append(f"punch{random.randint(1, 3)}")  # not self.rng: that drives the boxer
+        if counter:
+            self.sounds.append("crowd_ooh")
+        self.say("COUNTER!" if counter else ("HOOK!" if kind == "hook" else "POW!"),
+                 (255, 220, 90) if counter else (255, 255, 255))
 
     def finish(self, won):
         self.won = won
         self.goto("result")
-        self.sounds.append("win" if won else "over")
+        self.sounds += ["bell_end", "crowd_roar" if won else "crowd_aww"]
         if won:
             key = f"boxing_{self.opponent.spec['sprite']}"
             self.scores[key] = self.scores.get(key, 0) + 1
             self.save_scores(self.scores)
 
     def _result(self, dt, fresh):
-        if self.t - self.state_t < self.b["result_seconds"]:
+        since = self.t - self.state_t
+        if self.won and since < 4.0 and int((since + dt) * 8) > int(since * 8):  # confetti, 8 bursts/s
+            self.fx.confetti(random.uniform(0.05, 0.95) * self.lobby.aspect, -0.02, 10)
+        if since < self.b["result_seconds"]:
             return
         up = self.me.kp is not None and self.lobby.hands_up(self.me.kp)
         self.hold = self.hold + dt if up else 0.0

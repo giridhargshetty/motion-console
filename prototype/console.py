@@ -27,7 +27,7 @@ sys.path[:0] = [str(HERE), str(HERE.parent)]  # prototype modules + pose_service
 import fruit_slice as fs  # noqa: E402
 import player as pl  # noqa: E402
 from boxing import Boxing  # noqa: E402
-from boxing_draw import BoxingRenderer  # noqa: E402
+from boxing_draw import BoxingRenderer, make_sounds as boxing_sounds  # noqa: E402
 from console_setup import Setup  # noqa: E402
 from network import Network  # noqa: E402
 
@@ -77,7 +77,7 @@ def main():
     setup = Setup(cfg, net)
     if net.available and cfg["network"]["show_at_startup"]:
         setup.open()
-    sounds = fs.make_sounds()
+    sounds = fs.make_sounds() | boxing_sounds()
     clock = pygame.time.Clock()
     last_seq = 0
     perf_log = HERE.parent / "logs" / "perf.log"  # read remotely to check the box keeps up
@@ -133,6 +133,7 @@ def main():
                         setup.open()
                 if boxing.done:  # back to the game picker
                     boxing = None
+                    boxing_renderer.stop_audio()
                     game.goto("games")
             else:
                 game.update(people, fresh, t_pose, now, view)
