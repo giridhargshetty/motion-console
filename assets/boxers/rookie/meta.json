@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "name": "rookie",
+  "size": [
+    512,
+    512
+  ],
+  "framing": "full",
+  "anchor": {
+    "feet": [
+      256.0,
+      459.0
+    ],
+    "head": [
+      256.0,
+      119.0
+    ]
+  },
+  "animations": {
+    "block": {
+      "fps": 15,
+      "frames": 43,
+      "loop": false
+    },
+    "knockout": {
+      "fps": 15,
+      "frames": 102,
+      "loop": false
+    },
+    "hook": {
+      "fps": 15,
+      "frames": 36,
+      "loop": false,
+      "impact_frame": 15,
+      "impact_hand": "left",
+      "impact_xy": [
+        256.1,
+        372.1
+      ]
+    },
+    "cross": {
+      "fps": 15,
+      "frames": 49,
+      "loop": false,
+      "impact_frame": 38,
+      "impact_hand": "right",
+      "impact_xy": [
+        232.8,
+        293.5
+      ]
+    },
+    "idle": {
+      "fps": 15,
+      "frames": 44,
+      "loop": true
+    },
+    "hit_head": {
+      "fps": 15,
+      "frames": 22,
+      "loop": false
+    },
+    "jab": {
+      "fps": 15,
+      "frames": 27,
+      "loop": false,
+      "impact_frame": 7,
+      "impact_hand": "left",
+      "impact_xy": [
+        235.4,
+        366.9
+      ]
+    },
+    "victory": {
+      "fps": 15,
+      "frames": 29,
+      "loop": false
+    }
+  }
+}
