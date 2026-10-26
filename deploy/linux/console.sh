@@ -33,9 +33,31 @@ fi
 # The game connects to the phone itself (adb forward + DroidCam app); start adb early.
 adb start-server >/dev/null 2>&1 || true
 
+# Sound through the TV: ALSA's default is the mini PC's own analog output. Point it at the HDMI
+# port with a screen attached (aplay -l shows the TV's name there instead of "HDMI n"), so it
+# follows the TV to whichever port it's plugged into. No TV found: keep the analog default.
+hdmi_audio() {
+    local line card dev
+    line="$(aplay -l 2>/dev/null | grep -E '^card [0-9]+: .*device [0-9]+: HDMI [0-9]+ \[' | grep -vE '\[HDMI [0-9]+\]$' | head -1)"
+    if [ -z "$line" ]; then
+        rm -f "$HOME/.asoundrc"
+        log "sound: no TV found on HDMI, using the analog output"
+        return
+    fi
+    card="$(echo "$line" | sed -E 's/^card ([0-9]+):.*/\1/')"
+    dev="$(echo "$line" | sed -E 's/.*device ([0-9]+):.*/\1/')"
+    cat > "$HOME/.asoundrc" <<EOF
+# Written by deploy/linux/console.sh at every game start: game sound to the TV over HDMI.
+pcm.!default { type plug slave.pcm "hw:$card,$dev" }
+ctl.!default { type hw card $card }
+EOF
+    log "sound: HDMI card $card device $dev ($(echo "$line" | sed -E 's/.*\[(.*)\]$/\1/'))"
+}
+
 # 2. Game loop. Exit code 10 means Ctrl+Q: stop and hand tty1 over to a shell. Anything else
 #    (an update stopping the game, a crash) starts it again.
 while true; do
+    hdmi_audio
     log "starting game"
     rm -f "$LOG_DIR/.game_exit"
     xinit "$REPO_DIR/deploy/linux/run_game.sh" -- :0 vt1 -keeptty -nolisten tcp >> "$LOG_DIR/xorg.log" 2>&1
