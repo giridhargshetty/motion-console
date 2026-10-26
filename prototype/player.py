@@ -362,13 +362,14 @@ class PoseTracker:
         self.crop_bars = cam["crop_bars"]
         self.camera = open_camera(cam)
         self.model = cfg["pose"]["model"]
+        self.model_two = cfg["pose"].get("model_two_players", self.model)  # while looking for 2 people
         self.max_people = cfg["pose"].get("max_players", 1)
         self.want_people = self.max_people  # the game lowers this to 1 for 1-player rounds
         self._people = self.want_people
         self.want_mask = False  # Dress Up turns this on: the person's outline with every frame
         self._masks = False
         self._mask = (0, None)  # (seq, uint8 mask the shape of the shown frame, MASK_WIDTH wide)
-        self.landmarker = make_landmarker(self.model, vision.RunningMode.VIDEO, self._people)
+        self.landmarker = make_landmarker(self.model_for(self._people), vision.RunningMode.VIDEO, self._people)
         self._probe = make_landmarker("lite", vision.RunningMode.IMAGE) if self.auto_rotate else None
         self._votes = []
         self.recheck_rotation = False  # the game sets this on the calibration screen
@@ -386,6 +387,9 @@ class PoseTracker:
         """(seq, frame, people, t): seq goes up by one per processed frame."""
         with self._lock:
             return self._latest
+
+    def model_for(self, people):
+        return self.model if people == 1 else self.model_two
 
     def latest_mask(self):
         """(seq, mask): the person's outline for frame seq (0..255, mirrored like the frame), or None."""
@@ -424,7 +428,7 @@ class PoseTracker:
                 # Looking for one person is faster than two, and passers-by can't join in;
                 # the outline is only worked out while a game wants it.
                 self.landmarker.close()
-                self.landmarker = make_landmarker(self.model, vision.RunningMode.VIDEO, want, self.want_mask)
+                self.landmarker = make_landmarker(self.model_for(want), vision.RunningMode.VIDEO, want, self.want_mask)
                 self._people, self._masks = want, self.want_mask
             if self.auto_rotate and (not self.rotation_locked and n % 10 == 0
                                      or self.recheck_rotation and n % 30 == 0):

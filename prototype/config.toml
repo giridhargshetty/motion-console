@@ -18,6 +18,10 @@ mirror = true        # screen acts like a mirror
 
 [pose]
 model = "full"       # lite | full (Phase 0: full = 15 ms/frame on this PC)
+model_two_players = "lite"  # while looking for 2 people (calibration, 2-player rounds). Measured on the
+                     # console (i5-6400): 2 people full 57 ms -> lite 41 ms; 1 person full 29 ms.
+                     # The HD 530's GPU was tried too: 1 person faster, but the full model's points came out
+                     # wrong (52 px off) and it only ever found 1 of 2 people, so pose stays on the CPU.
 max_players = 2      # 1 or 2. With 2, two people in view at the start play against each other
                      # (BLUE on the left, ORANGE on the right). Two people need the phone in landscape.
 min_visibility = 0.5 # keypoints less visible than this are ignored

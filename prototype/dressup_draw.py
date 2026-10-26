@@ -328,7 +328,7 @@ class DressUpRenderer:
             box = self.rect(zones[zone], W, H)
             frac = min(1.0, g.hover.get(zone, 0.0) / g.hover_needed(zone))
             focused = g.focus == i
-            screen.blit(pygame.transform.smoothscale(self.scene(key, (W, H)), box.size), box)
+            screen.blit(self.scene(key, box.size), box)  # cached per size: rescaling 10 every frame cost ~8 ms
             img = self.preview(key, box.h * 0.92)
             clip = screen.get_clip()
             screen.set_clip(box)
