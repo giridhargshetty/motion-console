@@ -1,0 +1,400 @@
+{
+ "version": 1,
+ "name": "GLADIATOR",
+ "scene": "scene.jpg",
+ "pieces": [
+  {
+   "name": "crest",
+   "layer": "front",
+   "views": [
+    {
+     "file": "crest.png",
+     "size": [
+      112,
+      320
+     ],
+     "anchors": {
+      "l_ear": [
+       322.7,
+       678.5
+      ],
+      "r_ear": [
+       -210.7,
+       678.5
+      ]
+     },
+     "ratio": 0.0,
+     "scale_ref": {
+      "l_shoulder": [
+       470.8,
+       1137.8
+      ],
+      "r_shoulder": [
+       -358.8,
+       1137.8
+      ]
+     },
+     "pivot": [
+      56.0,
+      308.1
+     ]
+    },
+    {
+     "file": "crest_a.png",
+     "size": [
+      320,
+      230
+     ],
+     "anchors": {
+      "l_ear": [
+       316.8,
+       487.3
+      ],
+      "r_ear": [
+       3.2,
+       487.3
+      ]
+     },
+     "ratio": 0.195,
+     "scale_ref": {
+      "l_shoulder": [
+       457.8,
+       817.1
+      ],
+      "r_shoulder": [
+       -137.8,
+       817.1
+      ]
+     },
+     "pivot": [
+      160.0,
+      221.4
+     ]
+    },
+    {
+     "file": "crest_b.png",
+     "size": [
+      320,
+      230
+     ],
+     "anchors": {
+      "l_ear": [
+       316.8,
+       487.3
+      ],
+      "r_ear": [
+       3.2,
+       487.3
+      ]
+     },
+     "ratio": -0.195,
+     "scale_ref": {
+      "l_shoulder": [
+       457.8,
+       817.1
+      ],
+      "r_shoulder": [
+       -137.8,
+       817.1
+      ]
+     },
+     "pivot": [
+      160.0,
+      221.4
+     ]
+    }
+   ],
+   "min_vis": 0.3,
+   "bob": true
+  },
+  {
+   "name": "helmet",
+   "layer": "front",
+   "views": [
+    {
+     "file": "helmet.png",
+     "size": [
+      233,
+      320
+     ],
+     "anchors": {
+      "l_ear": [
+       194.1,
+       150.6
+      ],
+      "r_ear": [
+       38.9,
+       150.6
+      ]
+     },
+     "ratio": 0.0,
+     "scale_ref": {
+      "l_shoulder": [
+       237.3,
+       284.3
+      ],
+      "r_shoulder": [
+       -4.3,
+       284.3
+      ]
+     }
+    },
+    {
+     "file": "helmet_a.png",
+     "size": [
+      320,
+      305
+     ],
+     "anchors": {
+      "l_ear": [
+       220.7,
+       143.5
+      ],
+      "r_ear": [
+       99.3,
+       143.5
+      ]
+     },
+     "ratio": 0.194,
+     "scale_ref": {
+      "l_shoulder": [
+       275.2,
+       271.1
+      ],
+      "r_shoulder": [
+       44.8,
+       271.1
+      ]
+     }
+    },
+    {
+     "file": "helmet_b.png",
+     "size": [
+      320,
+      305
+     ],
+     "anchors": {
+      "l_ear": [
+       220.7,
+       143.5
+      ],
+      "r_ear": [
+       99.3,
+       143.5
+      ]
+     },
+     "ratio": -0.194,
+     "scale_ref": {
+      "l_shoulder": [
+       275.2,
+       271.1
+      ],
+      "r_shoulder": [
+       44.8,
+       271.1
+      ]
+     }
+    }
+   ],
+   "min_vis": 0.3
+  },
+  {
+   "name": "skirt",
+   "layer": "front",
+   "views": [
+    {
+     "file": "skirt.png",
+     "size": [
+      320,
+      168
+     ],
+     "anchors": {
+      "l_shoulder": [
+       258.8,
+       -184.1
+      ],
+      "r_shoulder": [
+       61.2,
+       -184.1
+      ],
+      "mid_hip": [
+       160.0,
+       20.5
+      ]
+     },
+     "swing_y": 20.5
+    }
+   ],
+   "swing": {
+    "sway": 0.015,
+    "flare": true
+   }
+  },
+  {
+   "name": "armour",
+   "layer": "front",
+   "views": [
+    {
+     "file": "armour.png",
+     "size": [
+      320,
+      270
+     ],
+     "anchors": {
+      "l_shoulder": [
+       275.2,
+       59.6
+      ],
+      "r_shoulder": [
+       44.8,
+       59.6
+      ],
+      "mid_hip": [
+       160.0,
+       298.3
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "shield",
+   "layer": "front",
+   "views": [
+    {
+     "file": "shield.png",
+     "size": [
+      320,
+      320
+     ],
+     "anchors": {
+      "l_elbow": [
+       108.1,
+       79.8
+      ],
+      "l_wrist": [
+       136.4,
+       240.2
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "sword",
+   "layer": "front",
+   "views": [
+    {
+     "file": "sword.png",
+     "size": [
+      126,
+      320
+     ],
+     "anchors": {
+      "r_elbow": [
+       104.8,
+       -72.3
+      ],
+      "r_wrist": [
+       87.4,
+       25.9
+      ]
+     }
+    }
+   ],
+   "sparkle": true
+  },
+  {
+   "name": "l_glove",
+   "layer": "front",
+   "views": [
+    {
+     "file": "l_glove.png",
+     "size": [
+      251,
+      320
+     ],
+     "anchors": {
+      "l_elbow": [
+       56.4,
+       -268.3
+      ],
+      "l_wrist": [
+       123.7,
+       113.4
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "l_boot",
+   "layer": "front",
+   "views": [
+    {
+     "file": "l_boot.png",
+     "size": [
+      162,
+      320
+     ],
+     "anchors": {
+      "l_knee": [
+       81.0,
+       -20.0
+      ],
+      "l_ankle": [
+       81.0,
+       238.5
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "r_glove",
+   "layer": "front",
+   "views": [
+    {
+     "file": "r_glove.png",
+     "size": [
+      251,
+      320
+     ],
+     "anchors": {
+      "r_elbow": [
+       194.6,
+       -268.3
+      ],
+      "r_wrist": [
+       127.3,
+       113.4
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "r_boot",
+   "layer": "front",
+   "views": [
+    {
+     "file": "r_boot.png",
+     "size": [
+      162,
+      320
+     ],
+     "anchors": {
+      "r_knee": [
+       81.0,
+       -20.0
+      ],
+      "r_ankle": [
+       81.0,
+       238.5
+      ]
+     }
+    }
+   ]
+  }
+ ]
+}

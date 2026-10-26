@@ -4,7 +4,9 @@ Runs inside Blender, headless:
 
     blender -b -P tools/blender/render_costume.py -- --out assets/costumes [--only knight,wizard] [--size 320]
 
-Every costume is modelled around one reference body (a child facing the camera, arms a little out).
+Every costume is modelled around one reference body (a child facing the camera, arms a little out),
+from simple shapes made here plus ready-made 3D models (assets/models/, CC0 by Quaternius) that
+model() loads and fits onto the body: a helmet sized to the head, a sword's grip in the fist.
 Each piece (helmet, armour, sword, ...) is rendered front-on with an orthographic camera to a
 transparent PNG, and its anchors (the body points it hangs on, like the ears or the shoulders) are
 projected into that PNG's pixels. The game (prototype/dressup_fit.py) maps those anchors onto the
@@ -39,6 +41,8 @@ J = {"head": (0, 0, 1.05), "nose": (0, -0.095, 1.035), "l_eye": (0.035, -0.085, 
      "l_foot": (0.1, -0.11, 0.02), "r_foot": (-0.1, -0.11, 0.02)}
 J = {k: Vector(v) for k, v in J.items()}
 HEAD = J["head"]
+MODELS = Path(__file__).resolve().parent.parent.parent / "assets" / "models"
+METAL_WORDS = ("gold", "steel", "metal", "grey", "silver")
 YAW = 35  # degrees, for the turned head views
 SIDES = (("l", 1), ("r", -1))
 
@@ -223,6 +227,88 @@ def held_rod(side, length, r, material, back=0.06):
     return tube(h - d * back, h + d * length, r, r, material, verts=16), h + d * length, d
 
 
+def model(name, *, width=None, length=None, at=(0.5, 0.5, 0.5), to=(0, 0, 0), along=None, tilt=0.0,
+          spin=0.0, recolor=None, pack="quaternius"):
+    """Load a ready-made model (OBJ + MTL: the packs' FBX files import with invisible materials)
+    and fit it onto the reference body.
+
+    width / length: its size across (x) or along its long axis (z), in metres.
+    at: the point of it that goes to `to`, as fractions of its bounding box (x, y, z): e.g. a
+        sword's grip (0.5, 0.5, 0.06), a crown's bottom middle (0.5, 0.5, 0).
+    along: point its +z (blade, handle) this way, e.g. along the forearm past the hand.
+    tilt / spin: degrees about x / z first (e.g. tip an open book up to face the camera).
+    recolor: material to use for every part (e.g. all black), else its own colours, with metal
+        names made shiny."""
+    before = set(bpy.data.objects)
+    bpy.ops.wm.obj_import(filepath=str(MODELS / pack / f"{name}.obj"))
+    objs = [o for o in bpy.data.objects if o not in before and o.type == "MESH"]
+    bpy.context.view_layer.update()
+    lo, hi = bounds(objs)
+    size = hi - lo
+    k = width / size.x if width else length / size.z if length else 1.0
+    pivot = Vector([lo[i] + size[i] * at[i] for i in range(3)])
+    R = Matrix.Rotation(math.radians(spin), 4, "Z")
+    R = Matrix.Rotation(math.radians(tilt), 4, "X") @ R
+    if along is not None:
+        R = Vector((0, 0, 1)).rotation_difference(Vector(along).normalized()).to_matrix().to_4x4() @ R
+    T = Matrix.Translation(Vector(to)) @ R @ Matrix.Diagonal((k, k, k, 1)) @ Matrix.Translation(-pivot)
+    for o in objs:
+        o.matrix_world = T @ o.matrix_world
+        if recolor is not None:
+            o.data.materials.clear()
+            o.data.materials.append(recolor)
+        else:
+            for m in o.data.materials:
+                b = m.node_tree.nodes.get("Principled BSDF") if m and m.node_tree else None
+                if b is None or m.get("tuned"):  # the importer reuses materials by name: tune once
+                    continue
+                m["tuned"] = True
+                c = b.inputs["Base Color"].default_value
+                b.inputs["Base Color"].default_value = (*[min(1.0, v * 1.25) for v in c[:3]], 1)  # MTL colours come in dark
+                shiny = any(w in m.name.lower() for w in METAL_WORDS)
+                b.inputs["Metallic"].default_value = 0.85 if shiny else 0.0
+                b.inputs["Roughness"].default_value = 0.35 if shiny else 0.7
+        for poly in o.data.polygons:
+            poly.use_smooth = False  # low-poly look, as the pack intends
+    return objs
+
+
+def held(name, side, length, grip, **kw):
+    """A ready-made weapon in the fist, carrying on along the forearm past the hand."""
+    return model(name, length=length, at=(0.5, 0.5, grip), to=hand(side), along=forearm_dir(side), **kw)
+
+
+def cape_sheet(material, top=0.9, bottom=0.28, half_top=0.17, half_bottom=0.34, collar=True):
+    """A cape hanging behind the shoulders, with folds."""
+    mesh = bpy.data.meshes.new("cape")
+    bm = bmesh.new()
+    rows, cols = 14, 16
+    grid = []
+    for i in range(rows + 1):
+        k = i / rows
+        z = top - k * (top - bottom)
+        half = half_top + k * (half_bottom - half_top)
+        grid.append([bm.verts.new(((j / cols * 2 - 1) * half, 0.07 + 0.025 * k * math.sin(j / cols * math.pi * 6), z))
+                     for j in range(cols + 1)])
+    for i in range(rows):
+        for j in range(cols):
+            bm.faces.new((grid[i][j], grid[i][j + 1], grid[i + 1][j + 1], grid[i + 1][j]))
+    bm.to_mesh(mesh)
+    bm.free()
+    o = bpy.data.objects.new("cape", mesh)
+    bpy.context.scene.collection.objects.link(o)
+    o.modifiers.new("Solid", "SOLIDIFY").thickness = 0.008
+    parts = [finish(o, material)]
+    if collar:
+        parts.append(ring((0, 0.04, top), 1, 0.02, material, scale=(0.16, 0.08, 1)))
+    return parts
+
+
+def skirt(material, top=0.62, bottom=0.4, r_top=0.15, r_bottom=0.21):
+    """A short skirt / tunic from the hips (gladiator, archer): swings like a robe."""
+    return [tube((0, 0, bottom), (0, 0, top), r_bottom, r_top, material, verts=48)]
+
+
 # ---------------------------------------------------------------- costumes
 # Each piece: (name, builder, anchors, options). Builders make objects in the scene.
 
@@ -246,12 +332,8 @@ def knight():
                 tube(HEAD + Vector((0, 0.02, 0.12)), HEAD + Vector((0, 0.02, 0.14)), 0.02, 0.012, gold)]
 
     def armour():
-        parts = [torso_shell(steel), ring((0, 0, 0.6), 1, 0.012, gold, scale=(0.15, 0.095, 1)),
-                 box((0, -0.1, 0.6), (0.3, 0.02, 0.04), brown, bevel=0.005),
-                 flat(star(), (0, -0.105, 0.76), 0.01, gold, scale=0.05)]
-        for side, s in SIDES:
-            parts.append(sphere(J[f"{side}_shoulder"] + Vector((0.02 * s, 0, 0.015)), 0.072, steel, scale=(1.1, 1, 0.8)))
-        return parts
+        return [model("Armor_Metal2", width=0.44, at=(0.5, 0.5, 1.0), to=(0, 0, 0.965)),
+                box((0, -0.06, 0.6), (0.3, 0.06, 0.04), brown, bevel=0.005)]
 
     def shield():
         c = along(J["l_elbow"], J["l_wrist"], 0.5) + Vector((0.04, -0.09, 0))
@@ -262,12 +344,7 @@ def knight():
                 box(c + Vector((0, -0.012, 0.04)), (0.16, 0.006, 0.022), gold, bevel=0.002)]
 
     def sword():
-        blade, tip, d = held_rod("r", 0.5, 0.012, steel, back=0.0)
-        blade.scale = (2.2, 0.5, 1)
-        h = hand("r")
-        across = Vector((d.z, 0, -d.x))
-        return [blade, tube(h - across * 0.08, h + across * 0.08, 0.012, 0.012, gold, 16),
-                tube(h - d * 0.09, h + d * 0.01, 0.016, 0.016, brown, 16), sphere(h - d * 0.1, 0.022, gold)]
+        return held("Sword_big", "r", 0.7, 0.06)
 
     pieces = [("plume", plume, ["l_ear", "r_ear"], {"yaw": True, "min_vis": 0.3, "bob": HEAD + Vector((0, 0.02, 0.125))}),
               ("helmet", helmet, ["l_ear", "r_ear"], {"yaw": True, "min_vis": 0.3}),
@@ -303,25 +380,7 @@ def superhero():
         return parts
 
     def cape():
-        mesh = bpy.data.meshes.new("cape")
-        bm = bmesh.new()
-        rows, cols = 14, 16
-        grid = []
-        for i in range(rows + 1):
-            k = i / rows
-            z = 0.9 - k * 0.62
-            half = 0.17 + k * 0.17
-            grid.append([bm.verts.new(((j / cols * 2 - 1) * half, 0.07 + 0.025 * k * math.sin(j / cols * math.pi * 6), z))
-                         for j in range(cols + 1)])
-        for i in range(rows):
-            for j in range(cols):
-                bm.faces.new((grid[i][j], grid[i][j + 1], grid[i + 1][j + 1], grid[i + 1][j]))
-        bm.to_mesh(mesh)
-        bm.free()
-        o = bpy.data.objects.new("cape", mesh)
-        bpy.context.scene.collection.objects.link(o)
-        o.modifiers.new("Solid", "SOLIDIFY").thickness = 0.008
-        return [finish(o, red), ring((0, 0.04, 0.9), 1, 0.02, red, scale=(0.16, 0.08, 1))]
+        return cape_sheet(red)
 
     pieces = [("mask", mask, ["l_ear", "r_ear"], {"yaw": True, "min_vis": 0.3}),
               ("cape", cape, ["l_shoulder", "r_shoulder", "mid_hip"],
@@ -331,44 +390,6 @@ def superhero():
         pieces += [(f"{side}_glove", lambda side=side: glove(side, red), [f"{side}_elbow", f"{side}_wrist"], {}),
                    (f"{side}_boot", lambda side=side: boot(side, red, top=0.3, cuff=gold), [f"{side}_knee", f"{side}_ankle"], {})]
     return "SUPERHERO", pieces, city
-
-
-def astronaut():
-    white = mat("suit_white", (0.92, 0.92, 0.9), rough=0.55)
-    orange = mat("orange", (1.0, 0.45, 0.05), rough=0.5)
-    grey = mat("grey", (0.35, 0.36, 0.4), rough=0.5)
-    glass = mat("glass", (0.7, 0.85, 1.0), rough=0.05, alpha=0.22)
-    lights = [mat(f"led{i}", c, emit=4.0) for i, c in enumerate(((1, 0.1, 0.1), (0.1, 1, 0.2), (0.2, 0.5, 1)))]
-
-    def helmet():
-        return [sphere(HEAD + Vector((0, -0.005, 0.0)), 0.165, glass, segs=48),
-                ring(HEAD + Vector((0, 0, -0.135)), 0.12, 0.028, white),
-                box(HEAD + Vector((0.15, 0.0, 0.05)), (0.03, 0.05, 0.05), white, bevel=0.008),
-                sphere(HEAD + Vector((0.168, -0.02, 0.06)), 0.012, lights[1])]
-
-    def suit():
-        parts = [torso_shell(white, width=0.18, depth=0.11), ring((0, 0, 0.6), 1, 0.016, orange, scale=(0.17, 0.105, 1)),
-                 box((0, -0.115, 0.76), (0.13, 0.025, 0.09), grey, bevel=0.01)]
-        for i, led in enumerate(lights):
-            parts.append(sphere((-0.04 + 0.04 * i, -0.13, 0.78), 0.012, led))
-        parts.append(box((0.1, -0.1, 0.84), (0.05, 0.01, 0.035), mat("flag", (0.1, 0.2, 0.75)), bevel=0.003))
-        for side, s in SIDES:
-            parts.append(sphere(J[f"{side}_shoulder"] + Vector((0.02 * s, 0, 0)), 0.068, white, scale=(1, 1, 0.85)))
-        return parts
-
-    def sleeve(a, b):
-        return lambda: [tube(J[a], J[b], 0.058, 0.052, white), ring(J[b], 0.052, 0.012, orange,
-                                                                    rot=(J[b] - J[a]).to_track_quat("Z", "Y").to_euler())]
-
-    pieces = [("helmet", helmet, ["l_ear", "r_ear"], {"yaw": True, "min_vis": 0.3}),
-              ("suit", suit, ["l_shoulder", "r_shoulder", "mid_hip"], {})]
-    for side, _ in SIDES:
-        pieces += [(f"{side}_upper", sleeve(f"{side}_shoulder", f"{side}_elbow"), [f"{side}_shoulder", f"{side}_elbow"], {}),
-                   (f"{side}_lower", sleeve(f"{side}_elbow", f"{side}_wrist"), [f"{side}_elbow", f"{side}_wrist"], {}),
-                   (f"{side}_glove", lambda side=side: glove(side, white, cuff=orange, r=0.05), [f"{side}_elbow", f"{side}_wrist"], {}),
-                   (f"{side}_boot", lambda side=side: boot(side, white, top=0.22, sole=grey, r=0.06, cuff=orange),
-                    [f"{side}_knee", f"{side}_ankle"], {})]
-    return "ASTRONAUT", pieces, space
 
 
 def pirate():
@@ -428,16 +449,7 @@ def royal():
     starlight = mat("starlight", (1.0, 0.85, 0.3), metal=0.5, emit=2.0)
 
     def crown():
-        base = HEAD + Vector((0, 0, 0.085))
-        parts = [tube(base, base + Vector((0, 0, 0.045)), 0.092, 0.095, gold)]
-        for i in range(7):
-            a = math.pi * (0.2 + 0.6 * i / 6)
-            p = base + Vector((math.cos(a) * 0.093, -math.sin(a) * 0.093, 0.045))
-            parts.append(tube(p, p + Vector((0, 0, 0.05)), 0.016, 0.0, gold, 12))
-            parts.append(sphere(p + Vector((0, -0.006, 0.054)), 0.009, gold))
-            if i % 2 == 0:
-                parts.append(sphere(base + Vector((math.cos(a) * 0.097, -math.sin(a) * 0.097, 0.022)), 0.011, gems[i // 2 % 3]))
-        return parts
+        return model("Crown2", width=0.21, at=(0.5, 0.5, 0.0), to=HEAD + Vector((0, 0, 0.07)))
 
     def gown():
         parts = [robe(purple, top=0.9, bottom=0.28, r_top=0.165, r_bottom=0.32),
@@ -451,7 +463,7 @@ def royal():
 
     def wand():
         rod, tip, d = held_rod("r", 0.25, 0.008, gold, back=0.04)
-        return [rod, flat(star(), tip + d * 0.05, 0.015, starlight, scale=0.055)]
+        return [rod, model("Star", width=0.085, to=tip + d * 0.04, recolor=starlight)]
 
     pieces = [("crown", crown, ["l_ear", "r_ear"], {"yaw": True, "min_vis": 0.3}),
               ("gown", gown, ["l_shoulder", "r_shoulder", "mid_hip"],
@@ -499,16 +511,139 @@ def wizard():
                 sphere(h + Vector((0, 0, 0.47)), 0.05, orb),
                 ring(h + Vector((0, 0, 0.42)), 0.03, 0.008, gold)]
 
+    def book():  # open spellbook held up in the left hand, pages to the camera
+        return model("Book1_Open", width=0.22, tilt=75, at=(0.5, 0.5, 0.5), to=hand("l") + Vector((0.01, -0.07, 0.05)))
+
     pieces = [("hat_top", hat_top, ["l_ear", "r_ear"], {"yaw": True, "min_vis": 0.3, "bob": brim + Vector((0, 0, 0.03))}),
               ("hat", hat, ["l_ear", "r_ear"], {"yaw": True, "min_vis": 0.3}),
               ("robe", robe_piece, ["l_shoulder", "r_shoulder", "mid_hip"],
                {"swing": {"from": "mid_hip", "sway": 0.012, "flare": True}}),
-              ("staff", staff, ["r_elbow", "r_wrist"], {"rotate": 0.0, "sparkle": True})]
+              ("staff", staff, ["r_elbow", "r_wrist"], {"rotate": 0.0, "sparkle": True}),
+              ("book", book, ["l_elbow", "l_wrist"], {"rotate": 0.0})]
     return "WIZARD", pieces, forest
 
 
-COSTUMES = {"knight": knight, "superhero": superhero, "astronaut": astronaut, "pirate": pirate,
-            "royal": royal, "wizard": wizard}
+def dark_knight():
+    black = mat("black_steel", (0.08, 0.08, 0.1), metal=0.85, rough=0.35)
+    darkred = mat("dark_red", (0.35, 0.02, 0.04), rough=0.6)
+
+    def helmet():  # the knight pack's great helm, all black: a mysterious visor
+        return model("Helmet1", width=0.27, at=(0.5, 0.5, 0.5), to=HEAD + Vector((0, 0.005, 0.02)), recolor=black)
+
+    pieces = [("helmet", helmet, ["l_ear", "r_ear"], {"yaw": True, "min_vis": 0.3}),
+              ("cape", lambda: cape_sheet(darkred, half_bottom=0.38), ["l_shoulder", "r_shoulder", "mid_hip"],
+               {"layer": "behind", "swing": {"from": "l_shoulder", "sway": 0.03}}),
+              ("armour", lambda: model("Armor_Black", width=0.46, at=(0.5, 0.5, 1.0), to=(0, 0, 0.975)),
+               ["l_shoulder", "r_shoulder", "mid_hip"], {}),
+              ("hammer", lambda: held("Hammer_Double", "r", 0.62, 0.14), ["r_elbow", "r_wrist"], {"sparkle": True})]
+    for side, _ in SIDES:
+        pieces += [(f"{side}_gauntlet", lambda side=side: glove(side, black, cuff=black), [f"{side}_elbow", f"{side}_wrist"], {}),
+                   (f"{side}_boot", lambda side=side: boot(side, black, top=0.24, cuff=darkred), [f"{side}_knee", f"{side}_ankle"], {})]
+    return "DARK KNIGHT", pieces, dark_castle
+
+
+def viking():
+    steel = mat("steel", (0.5, 0.52, 0.57), metal=0.9, rough=0.42)
+    horn = mat("horn", (0.92, 0.88, 0.75), rough=0.5)
+    ginger = mat("ginger", (0.75, 0.32, 0.08), rough=0.9)
+    fur = mat("fur_brown", (0.36, 0.25, 0.15), rough=1.0)
+    leather = mat("leather", (0.32, 0.17, 0.06), rough=0.6)
+
+    def helmet():  # round helmet with horns, and a braided beard
+        dome = lambda co: co.z > HEAD.z + 0.03  # noqa: E731
+        parts = [shell(HEAD + Vector((0, 0.005, 0.0)), 0.118, steel, scale=(1, 1.05, 1.05), keep=dome, thick=0.012),
+                 ring(HEAD + Vector((0, 0.005, 0.035)), 0.118, 0.012, steel, scale=(1, 1.05, 1)),
+                 box(HEAD + Vector((0, -0.124, -0.0)), (0.02, 0.012, 0.075), steel, bevel=0.004)]
+        for side, s in SIDES:
+            base = HEAD + Vector((0.1 * s, 0, 0.07))
+            parts += [tube(base, base + Vector((0.07 * s, 0, 0.05)), 0.028, 0.018, horn, 16),
+                      tube(base + Vector((0.07 * s, 0, 0.05)), base + Vector((0.09 * s, 0, 0.13)), 0.018, 0.0, horn, 16)]
+        chin = HEAD + Vector((0, -0.08, -0.06))
+        parts.append(sphere(chin, 0.075, ginger, scale=(1.1, 0.6, 0.75)))
+        for side, s in SIDES:
+            for k in range(3):
+                parts.append(sphere(chin + Vector((0.03 * s, -0.01, -0.06 - 0.035 * k)), 0.02 - 0.003 * k, ginger))
+        return parts
+
+    def armour():
+        return [model("Armor_Leather", width=0.36, at=(0.5, 0.5, 1.0), to=(0, 0, 0.95)),
+                ring((0, 0, 0.91), 1, 0.045, fur, scale=(0.19, 0.12, 1))]
+
+    pieces = [("helmet", helmet, ["l_ear", "r_ear"], {"yaw": True, "min_vis": 0.3}),
+              ("cape", lambda: cape_sheet(fur, bottom=0.36, collar=False), ["l_shoulder", "r_shoulder", "mid_hip"],
+               {"layer": "behind", "swing": {"from": "l_shoulder", "sway": 0.02}}),
+              ("armour", armour, ["l_shoulder", "r_shoulder", "mid_hip"], {}),
+              ("axe", lambda: held("Axe_Double", "r", 0.6, 0.12), ["r_elbow", "r_wrist"], {"sparkle": True})]
+    for side, _ in SIDES:
+        pieces += [(f"{side}_glove", lambda side=side: glove(side, leather, cuff=fur), [f"{side}_elbow", f"{side}_wrist"], {}),
+                   (f"{side}_boot", lambda side=side: boot(side, leather, top=0.26, cuff=fur), [f"{side}_knee", f"{side}_ankle"], {})]
+    return "VIKING", pieces, fjord
+
+
+def gladiator():
+    bronze = mat("bronze", (0.8, 0.5, 0.2), metal=0.9, rough=0.35)
+    red = mat("crest_red", (0.8, 0.06, 0.06), rough=0.7)
+    leather = mat("leather", (0.32, 0.17, 0.06), rough=0.6)
+
+    def helmet():  # the knight pack's Corinthian helmet, in bronze: eyes and mouth show through
+        return model("Helmet2", width=0.25, at=(0.5, 0.5, 0.59), to=HEAD + Vector((0, 0.0, 0.015)), recolor=bronze)
+
+    def crest():
+        return [sphere(HEAD + Vector((0, 0.0, 0.17)), 0.05, red, scale=(0.35, 2.4, 1.0))]
+
+    def shield():  # round bronze shield on the left forearm
+        c = along(J["l_elbow"], J["l_wrist"], 0.5) + Vector((0.04, -0.09, 0))
+        return [tube(c + Vector((0, 0.012, 0)), c - Vector((0, 0.012, 0)), 0.15, 0.15, bronze, 48),
+                ring(c - Vector((0, 0.012, 0)), 0.145, 0.012, bronze, rot=(math.radians(90), 0, 0)),
+                sphere(c - Vector((0, 0.02, 0)), 0.035, bronze, scale=(1, 0.6, 1))]
+
+    pieces = [("crest", crest, ["l_ear", "r_ear"], {"yaw": True, "min_vis": 0.3, "bob": HEAD + Vector((0, 0, 0.12))}),
+              ("helmet", helmet, ["l_ear", "r_ear"], {"yaw": True, "min_vis": 0.3}),
+              ("skirt", lambda: skirt(red), ["l_shoulder", "r_shoulder", "mid_hip"],
+               {"swing": {"from": "mid_hip", "sway": 0.015, "flare": True}}),
+              ("armour", lambda: model("Armor_Leather", width=0.36, at=(0.5, 0.5, 1.0), to=(0, 0, 0.95)),
+               ["l_shoulder", "r_shoulder", "mid_hip"], {}),
+              ("shield", shield, ["l_elbow", "l_wrist"], {}),
+              ("sword", lambda: held("ShortSword", "r", 0.5, 0.1), ["r_elbow", "r_wrist"], {"sparkle": True})]
+    for side, _ in SIDES:
+        pieces += [(f"{side}_glove", lambda side=side: glove(side, leather), [f"{side}_elbow", f"{side}_wrist"], {}),
+                   (f"{side}_boot", lambda side=side: boot(side, bronze, top=0.28, cuff=leather), [f"{side}_knee", f"{side}_ankle"], {})]
+    return "GLADIATOR", pieces, arena
+
+
+def archer():
+    green = mat("archer_green", (0.12, 0.45, 0.15), rough=0.7)
+    darkgreen = mat("archer_dark", (0.06, 0.25, 0.08), rough=0.7)
+    feather = mat("feather", (0.85, 0.1, 0.08), rough=0.7)
+    leather = mat("leather", (0.32, 0.17, 0.06), rough=0.6)
+    top = HEAD + Vector((0, 0, 0.075))
+
+    def cap():  # pointed green cap
+        return [sphere(top + Vector((0, 0.01, 0.0)), 0.11, green, scale=(1.05, 1.0, 0.55)),
+                tube(top + Vector((0, 0.02, 0.0)), top + Vector((0, 0.09, 0.08)), 0.07, 0.0, green, 32),
+                ring(top + Vector((0, 0, -0.01)), 0.108, 0.012, darkgreen, scale=(1, 1.02, 1))]
+
+    def plume():  # the red feather in the cap
+        return [sphere(top + Vector((0.07, 0.02, 0.07)), 0.02, feather, scale=(0.6, 0.6, 3.2))]
+
+    def bow():  # held upright in the left hand, by the middle of the wood
+        return model("Bow_Wooden", length=0.75, at=(0.85, 0.5, 0.5), to=hand("l") + Vector((0, -0.02, 0)))
+
+    pieces = [("feather", plume, ["l_ear", "r_ear"], {"yaw": True, "min_vis": 0.3, "bob": top + Vector((0.07, 0.02, 0.01))}),
+              ("cap", cap, ["l_ear", "r_ear"], {"yaw": True, "min_vis": 0.3}),
+              ("tunic", lambda: skirt(green, bottom=0.38, r_bottom=0.22), ["l_shoulder", "r_shoulder", "mid_hip"],
+               {"swing": {"from": "mid_hip", "sway": 0.012, "flare": True}}),
+              ("armour", lambda: model("Armor_Leather", width=0.36, at=(0.5, 0.5, 1.0), to=(0, 0, 0.95)),
+               ["l_shoulder", "r_shoulder", "mid_hip"], {}),
+              ("bow", bow, ["l_elbow", "l_wrist"], {"rotate": 0.0, "sparkle": True})]
+    for side, _ in SIDES:
+        pieces += [(f"{side}_glove", lambda side=side: glove(side, leather), [f"{side}_elbow", f"{side}_wrist"], {}),
+                   (f"{side}_boot", lambda side=side: boot(side, leather, top=0.3, cuff=darkgreen), [f"{side}_knee", f"{side}_ankle"], {})]
+    return "ARCHER", pieces, meadow
+
+
+COSTUMES = {"knight": knight, "dark_knight": dark_knight, "viking": viking, "gladiator": gladiator, "archer": archer,
+            "royal": royal, "pirate": pirate, "wizard": wizard, "superhero": superhero}
 
 
 # ---------------------------------------------------------------- scenes (backdrops)
@@ -582,6 +717,109 @@ def castle(rng):
             sphere((cx + k * 0.9, 18, cz + rng.uniform(-0.3, 0.3)), rng.uniform(0.8, 1.3), cloud, segs=16)
 
 
+def dark_castle(rng):
+    sky((0.08, 0.02, 0.1), (0.45, 0.1, 0.12), 0.8)
+    sun((0.4, 1, -0.4), 1.0, (1.0, 0.5, 0.4))
+    sphere((-8, 28, 11), 1.8, mat("blood_moon", (1, 0.35, 0.25), emit=3), segs=24)
+    ground((0.12, 0.1, 0.1))
+    stone, roof = mat("dark_stone", (0.18, 0.17, 0.2), rough=0.9), mat("dark_roof", (0.12, 0.02, 0.05), rough=0.6)
+    glow = mat("torch", (1.0, 0.55, 0.15), emit=6)
+    box((0, 14, 2.6), (30, 1.5, 5.2), stone, bevel=0)
+    for i in range(-15, 16):
+        box((i * 1.0, 14, 5.45), (0.55, 1.5, 0.5), stone, bevel=0)
+    for x in (-9, 9, -3.5, 3.5):
+        tall = 8.5 if abs(x) > 5 else 6.5
+        tube((x, 13, 0), (x, 13, tall), 1.3, 1.1, stone, 24)
+        tube((x, 13, tall), (x, 13, tall + 3.2), 1.5, 0.0, roof, 24)
+        box((x, 11.75, tall * 0.65), (0.35, 0.05, 0.7), glow, bevel=0)
+    box((0, 13.2, 1.5), (2.6, 0.4, 3.0), mat("gate", (0.05, 0.04, 0.04)), bevel=0)
+    for x in (-1.8, 1.8):
+        sphere((x, 12.9, 2.6), 0.18, glow, segs=12)
+    for _ in range(9):  # bats
+        x, z = rng.uniform(-10, 10), rng.uniform(8, 13)
+        flat([(-1, 0.2), (-0.5, 0.0), (0, 0.3), (0.5, 0.0), (1, 0.2), (0.3, -0.3), (0, -0.1), (-0.3, -0.3)],
+             (x, 20, z), 0.02, mat("bat", (0.02, 0.02, 0.02)), scale=0.35)
+
+
+def fjord(rng):
+    sky((0.45, 0.65, 0.95), (0.9, 0.93, 1.0))
+    sun((-0.3, 1, -0.45), 2.5, (1, 0.97, 0.92))
+    snow, rock = mat("snow", (0.95, 0.97, 1.0), rough=0.9), mat("rock", (0.35, 0.36, 0.4), rough=0.9)
+    ground((0.92, 0.94, 0.98))
+    bpy.ops.mesh.primitive_plane_add(size=60, location=(0, 30, 0.02))
+    finish(bpy.context.active_object, mat("fjord_sea", (0.08, 0.3, 0.5), rough=0.15), smooth=False)
+    box((0, 2, 0.01), (60, 12, 0.04), snow, bevel=0)
+    for i in range(9):
+        x = -20 + i * 5 + rng.uniform(-1.5, 1.5)
+        h = rng.uniform(6, 12)
+        tube((x, 40, 0), (x, 40, h), rng.uniform(4, 6), 0.0, rock, 6)
+        tube((x, 40 - 0.4, h * 0.62), (x, 40 - 0.4, h + 0.05), 2.3 * (1 - 0.62) * 1.6, 0.0, snow, 6)
+    pine = mat("pine", (0.05, 0.25, 0.15), rough=0.8)
+    for _ in range(14):
+        x, y = rng.uniform(-14, 14), rng.uniform(7, 12)
+        if abs(x) < 3:
+            continue
+        for k in range(3):
+            tube((x, y, 0.4 + 0.7 * k), (x, y, 1.6 + 0.7 * k), 0.9 - 0.25 * k, 0.0, pine, 10)
+            tube((x, y - 0.05, 1.1 + 0.7 * k), (x, y - 0.05, 1.62 + 0.7 * k), 0.35 - 0.08 * k, 0.0, snow, 10)
+    wood = mat("longship", (0.4, 0.22, 0.08), rough=0.8)
+    sphere((5, 26, 0.3), 2.8, wood, scale=(1, 0.25, 0.25), segs=24)
+    tube((5, 26, 0.3), (5, 26, 4), 0.07, 0.07, wood, 8)
+    box((5, 25.8, 2.6), (2.2, 0.05, 1.8), mat("sail_red", (0.75, 0.1, 0.08)), bevel=0)
+    flake = mat("flake", (1, 1, 1), emit=1.5)
+    for _ in range(60):
+        sphere((rng.uniform(-9, 9), rng.uniform(1, 6), rng.uniform(0.5, 6)), 0.035, flake, segs=6)
+
+
+def arena(rng):
+    sky((0.3, 0.55, 0.95), (0.85, 0.85, 0.95))
+    sun((0.3, 1, -0.6), 3.0, (1, 0.95, 0.85))
+    ground((0.85, 0.72, 0.5), rough=1.0)
+    wall = mat("arena_stone", (0.82, 0.72, 0.58), rough=0.9)
+    dark = mat("arch_shadow", (0.25, 0.18, 0.12), rough=1.0)
+    for i in range(40):  # the curved stands, arches in two tiers
+        a = math.pi * (0.1 + 0.8 * i / 39)
+        x, y = math.cos(a) * 18, 8 + math.sin(a) * 10
+        rot = (0, 0, math.pi / 2 + a)
+        box((x, y, 2.5), (1.6, 0.8, 5), wall, bevel=0, rot=rot)
+        for z in (1.2, 3.6):
+            box((x - math.cos(a) * 0.42, y - math.sin(a) * 0.42, z), (0.8, 0.05, 1.6), dark, bevel=0, rot=rot)
+    box((0, 18.5, 5.3), (40, 1, 0.6), wall, bevel=0)
+    for x in (-6, -2, 2, 6):
+        box((x, 17.8, 4.2), (0.9, 0.05, 1.8), mat(f"banner{x}", (0.75, 0.08, 0.08) if x % 4 else (0.9, 0.7, 0.15)), bevel=0)
+    crowd = [mat(f"fan{i}", c, rough=0.9) for i, c in enumerate(((0.6, 0.3, 0.2), (0.3, 0.3, 0.6), (0.8, 0.8, 0.7)))]
+    for _ in range(120):
+        a = rng.uniform(math.pi * 0.12, math.pi * 0.88)
+        r = rng.uniform(18.6, 19.5)
+        sphere((math.cos(a) * r, 8 + math.sin(a) * r * 10 / 18, 5.8 + rng.uniform(0, 0.6)), 0.22, crowd[rng.randrange(3)], segs=8)
+
+
+def meadow(rng):
+    sky((0.35, 0.6, 0.95), (0.85, 0.92, 1.0))
+    sun((-0.4, 1, -0.55), 2.6, (1, 0.97, 0.88))
+    ground((0.3, 0.6, 0.2))
+    trunk = mat("trunk", (0.3, 0.18, 0.08), rough=0.9)
+    leaves = [mat(f"leafy{i}", (0.12 + 0.05 * i, 0.45 + 0.08 * i, 0.12), rough=0.8) for i in range(3)]
+    for _ in range(16):
+        x, y = rng.uniform(-15, 15), rng.uniform(8, 18)
+        if abs(x) < 4 and y < 11:
+            continue
+        h = rng.uniform(2.5, 4)
+        tube((x, y, 0), (x, y, h), 0.25, 0.18, trunk, 10)
+        for k in range(3):
+            sphere((x + rng.uniform(-0.6, 0.6), y, h + rng.uniform(-0.2, 0.8)), rng.uniform(1.0, 1.6), leaves[k], segs=12)
+    for x in (-5.5, 5.5):  # archery targets on stands
+        for r, color in ((0.9, (0.95, 0.95, 0.95)), (0.7, (0.85, 0.1, 0.1)), (0.5, (0.95, 0.95, 0.95)),
+                         (0.3, (0.85, 0.1, 0.1)), (0.12, (1.0, 0.8, 0.1))):
+            tube((x, 6 - (0.9 - r) * 0.05, 1.6), (x, 6.05 - (0.9 - r) * 0.05, 1.6), r, r,
+                 mat(f"target{r}", color, rough=0.7), 32).rotation_euler = (math.radians(90), 0, 0)
+        for dx in (-0.5, 0.5):
+            tube((x + dx, 6.2, 0), (x + dx * 0.4, 6.1, 2.3), 0.06, 0.06, trunk, 8)
+    flower = [mat(f"flower{i}", c, emit=0.3) for i, c in enumerate(((1, 0.9, 0.2), (1, 0.4, 0.6), (0.9, 0.9, 1)))]
+    for _ in range(60):
+        sphere((rng.uniform(-8, 8), rng.uniform(0, 6), 0.05), 0.07, flower[rng.randrange(3)], segs=8)
+
+
 def city(rng):
     sky((0.03, 0.04, 0.15), (0.2, 0.15, 0.4))
     sun((0.3, 1, -0.5), 0.6, (0.6, 0.6, 1.0))
@@ -597,24 +835,6 @@ def city(rng):
             for wx in (-0.25, 0.25):
                 if rng.random() < 0.55:
                     box((x + wx * w, y - 0.61, wz * 0.7), (0.18, 0.02, 0.28), win[rng.random() < 0.3], bevel=0)
-
-
-def space(rng):
-    sky((0, 0, 0.02), (0.02, 0.01, 0.06), 0.3)
-    sun((-0.6, 1, -0.3), 4.0)
-    stars(400, 30, 0.5, 18, 35, rng)
-    rock = mat("moonrock", (0.5, 0.5, 0.52), rough=1)
-    ground((0.45, 0.45, 0.47))
-    for _ in range(14):
-        x, y = rng.uniform(-8, 8), rng.uniform(1, 9)
-        ring((x, y, 0.02), rng.uniform(0.3, 0.9), 0.08, rock, scale=(1, 0.6, 0.4))
-    planet = mat("earth", (0.15, 0.4, 0.9), emit=0.4, rough=0.6)
-    sphere((-7, 28, 10), 3.0, planet, segs=32)
-    land = mat("land", (0.2, 0.7, 0.25), rough=0.8)
-    for _ in range(6):
-        sphere((-7 + rng.uniform(-2, 2), 26.5, 10 + rng.uniform(-2, 2)), rng.uniform(0.6, 1.1), land, scale=(1, 0.3, 0.7), segs=16)
-    sphere((10, 30, 7), 1.6, mat("ringed", (0.9, 0.6, 0.3), rough=0.6), segs=32)
-    ring((10, 30, 7), 2.6, 0.25, mat("rings", (0.85, 0.75, 0.55), rough=0.6), rot=(1.2, 0.3, 0), scale=(1, 1, 0.1))
 
 
 def ship(rng):
@@ -829,7 +1049,7 @@ def _flatten(items):
 def mannequin():
     skin = mat("mannequin", (0.62, 0.66, 0.74), rough=0.6)
     parts = [sphere(HEAD, 0.095, skin, scale=(0.92, 1, 1.08)), tube(J["neck"] - Vector((0, 0, 0.05)), J["neck"], 0.04, 0.04, skin),
-             torso_shell(skin, width=0.14, depth=0.085, bottom=0.55, top=0.9)]
+             torso_shell(skin, width=0.13, depth=0.035, bottom=0.55, top=0.9)]
     for side, _ in SIDES:
         parts += [tube(J[f"{side}_shoulder"], J[f"{side}_elbow"], 0.04, 0.035, skin),
                   tube(J[f"{side}_elbow"], J[f"{side}_wrist"], 0.034, 0.03, skin),

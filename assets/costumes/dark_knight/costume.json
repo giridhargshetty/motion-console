@@ -1,0 +1,272 @@
+{
+ "version": 1,
+ "name": "DARK KNIGHT",
+ "scene": "scene.jpg",
+ "pieces": [
+  {
+   "name": "helmet",
+   "layer": "front",
+   "views": [
+    {
+     "file": "helmet.png",
+     "size": [
+      305,
+      320
+     ],
+     "anchors": {
+      "l_ear": [
+       246.5,
+       186.1
+      ],
+      "r_ear": [
+       58.5,
+       186.1
+      ]
+     },
+     "ratio": 0.0,
+     "scale_ref": {
+      "l_shoulder": [
+       298.8,
+       348.1
+      ],
+      "r_shoulder": [
+       6.2,
+       348.1
+      ]
+     }
+    },
+    {
+     "file": "helmet_a.png",
+     "size": [
+      320,
+      242
+     ],
+     "anchors": {
+      "l_ear": [
+       220.6,
+       140.8
+      ],
+      "r_ear": [
+       103.9,
+       140.8
+      ]
+     },
+     "ratio": 0.195,
+     "scale_ref": {
+      "l_shoulder": [
+       273.1,
+       263.4
+      ],
+      "r_shoulder": [
+       51.5,
+       263.4
+      ]
+     }
+    },
+    {
+     "file": "helmet_b.png",
+     "size": [
+      320,
+      242
+     ],
+     "anchors": {
+      "l_ear": [
+       216.1,
+       140.8
+      ],
+      "r_ear": [
+       99.4,
+       140.8
+      ]
+     },
+     "ratio": -0.195,
+     "scale_ref": {
+      "l_shoulder": [
+       268.5,
+       263.4
+      ],
+      "r_shoulder": [
+       46.9,
+       263.4
+      ]
+     }
+    }
+   ],
+   "min_vis": 0.3
+  },
+  {
+   "name": "cape",
+   "layer": "behind",
+   "views": [
+    {
+     "file": "cape.png",
+     "size": [
+      320,
+      269
+     ],
+     "anchors": {
+      "l_shoulder": [
+       213.7,
+       21.7
+      ],
+      "r_shoulder": [
+       105.0,
+       21.7
+      ],
+      "mid_hip": [
+       159.3,
+       134.3
+      ]
+     },
+     "swing_y": 21.7
+    }
+   ],
+   "swing": {
+    "sway": 0.03
+   }
+  },
+  {
+   "name": "armour",
+   "layer": "front",
+   "views": [
+    {
+     "file": "armour.png",
+     "size": [
+      320,
+      250
+     ],
+     "anchors": {
+      "l_shoulder": [
+       250.2,
+       64.1
+      ],
+      "r_shoulder": [
+       69.8,
+       64.1
+      ],
+      "mid_hip": [
+       160.0,
+       250.9
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "hammer",
+   "layer": "front",
+   "views": [
+    {
+     "file": "hammer.png",
+     "size": [
+      190,
+      320
+     ],
+     "anchors": {
+      "r_elbow": [
+       129.2,
+       -30.4
+      ],
+      "r_wrist": [
+       115.8,
+       45.8
+      ]
+     }
+    }
+   ],
+   "sparkle": true
+  },
+  {
+   "name": "l_gauntlet",
+   "layer": "front",
+   "views": [
+    {
+     "file": "l_gauntlet.png",
+     "size": [
+      251,
+      320
+     ],
+     "anchors": {
+      "l_elbow": [
+       56.4,
+       -268.3
+      ],
+      "l_wrist": [
+       123.7,
+       113.4
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "l_boot",
+   "layer": "front",
+   "views": [
+    {
+     "file": "l_boot.png",
+     "size": [
+      187,
+      320
+     ],
+     "anchors": {
+      "l_knee": [
+       93.5,
+       -70.8
+      ],
+      "l_ankle": [
+       93.5,
+       227.8
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "r_gauntlet",
+   "layer": "front",
+   "views": [
+    {
+     "file": "r_gauntlet.png",
+     "size": [
+      251,
+      320
+     ],
+     "anchors": {
+      "r_elbow": [
+       194.6,
+       -268.3
+      ],
+      "r_wrist": [
+       127.3,
+       113.4
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "r_boot",
+   "layer": "front",
+   "views": [
+    {
+     "file": "r_boot.png",
+     "size": [
+      187,
+      320
+     ],
+     "anchors": {
+      "r_knee": [
+       93.5,
+       -70.8
+      ],
+      "r_ankle": [
+       93.5,
+       227.8
+      ]
+     }
+    }
+   ]
+  }
+ ]
+}

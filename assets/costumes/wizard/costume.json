@@ -254,6 +254,30 @@
    ],
    "rotate": 0.0,
    "sparkle": true
+  },
+  {
+   "name": "book",
+   "layer": "front",
+   "views": [
+    {
+     "file": "book.png",
+     "size": [
+      320,
+      274
+     ],
+     "anchors": {
+      "l_elbow": [
+       96.0,
+       -71.8
+      ],
+      "l_wrist": [
+       136.4,
+       157.2
+      ]
+     }
+    }
+   ],
+   "rotate": 0.0
   }
  ]
 }

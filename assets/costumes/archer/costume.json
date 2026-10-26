@@ -1,0 +1,378 @@
+{
+ "version": 1,
+ "name": "ARCHER",
+ "scene": "scene.jpg",
+ "pieces": [
+  {
+   "name": "feather",
+   "layer": "front",
+   "views": [
+    {
+     "file": "feather.png",
+     "size": [
+      60,
+      320
+     ],
+     "anchors": {
+      "l_ear": [
+       76.3,
+       507.2
+      ],
+      "r_ear": [
+       -340.4,
+       507.2
+      ]
+     },
+     "ratio": 0.0,
+     "scale_ref": {
+      "l_shoulder": [
+       192.0,
+       866.0
+      ],
+      "r_shoulder": [
+       -456.1,
+       866.0
+      ]
+     },
+     "pivot": [
+      30.0,
+      298.9
+     ]
+    },
+    {
+     "file": "feather_a.png",
+     "size": [
+      320,
+      230
+     ],
+     "anchors": {
+      "l_ear": [
+       308.1,
+       912.8
+      ],
+      "r_ear": [
+       -476.1,
+       912.8
+      ]
+     },
+     "ratio": 0.195,
+     "scale_ref": {
+      "l_shoulder": [
+       660.6,
+       1737.2
+      ],
+      "r_shoulder": [
+       -828.6,
+       1737.2
+      ]
+     },
+     "pivot": [
+      160.0,
+      434.1
+     ]
+    },
+    {
+     "file": "feather_b.png",
+     "size": [
+      320,
+      230
+     ],
+     "anchors": {
+      "l_ear": [
+       186.1,
+       912.8
+      ],
+      "r_ear": [
+       -598.1,
+       912.8
+      ]
+     },
+     "ratio": -0.195,
+     "scale_ref": {
+      "l_shoulder": [
+       538.6,
+       1737.2
+      ],
+      "r_shoulder": [
+       -950.6,
+       1737.2
+      ]
+     },
+     "pivot": [
+      160.0,
+      434.1
+     ]
+    }
+   ],
+   "min_vis": 0.3,
+   "bob": true
+  },
+  {
+   "name": "cap",
+   "layer": "front",
+   "views": [
+    {
+     "file": "cap.png",
+     "size": [
+      320,
+      249
+     ],
+     "anchors": {
+      "l_ear": [
+       271.1,
+       263.8
+      ],
+      "r_ear": [
+       48.9,
+       263.8
+      ]
+     },
+     "ratio": 0.0,
+     "scale_ref": {
+      "l_shoulder": [
+       332.8,
+       455.1
+      ],
+      "r_shoulder": [
+       -12.8,
+       455.1
+      ]
+     }
+    },
+    {
+     "file": "cap_a.png",
+     "size": [
+      320,
+      179
+     ],
+     "anchors": {
+      "l_ear": [
+       225.4,
+       189.5
+      ],
+      "r_ear": [
+       94.6,
+       189.5
+      ]
+     },
+     "ratio": 0.195,
+     "scale_ref": {
+      "l_shoulder": [
+       284.1,
+       326.9
+      ],
+      "r_shoulder": [
+       35.9,
+       326.9
+      ]
+     }
+    },
+    {
+     "file": "cap_b.png",
+     "size": [
+      320,
+      179
+     ],
+     "anchors": {
+      "l_ear": [
+       225.4,
+       189.5
+      ],
+      "r_ear": [
+       94.6,
+       189.5
+      ]
+     },
+     "ratio": -0.195,
+     "scale_ref": {
+      "l_shoulder": [
+       284.1,
+       326.9
+      ],
+      "r_shoulder": [
+       35.9,
+       326.9
+      ]
+     }
+    }
+   ],
+   "min_vis": 0.3
+  },
+  {
+   "name": "tunic",
+   "layer": "front",
+   "views": [
+    {
+     "file": "tunic.png",
+     "size": [
+      320,
+      175
+     ],
+     "anchors": {
+      "l_shoulder": [
+       254.3,
+       -175.1
+      ],
+      "r_shoulder": [
+       65.7,
+       -175.1
+      ],
+      "mid_hip": [
+       160.0,
+       20.2
+      ]
+     },
+     "swing_y": 20.2
+    }
+   ],
+   "swing": {
+    "sway": 0.012,
+    "flare": true
+   }
+  },
+  {
+   "name": "armour",
+   "layer": "front",
+   "views": [
+    {
+     "file": "armour.png",
+     "size": [
+      320,
+      270
+     ],
+     "anchors": {
+      "l_shoulder": [
+       275.2,
+       59.6
+      ],
+      "r_shoulder": [
+       44.8,
+       59.6
+      ],
+      "mid_hip": [
+       160.0,
+       298.3
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "bow",
+   "layer": "front",
+   "views": [
+    {
+     "file": "bow.png",
+     "size": [
+      86,
+      320
+     ],
+     "anchors": {
+      "l_elbow": [
+       56.2,
+       79.0
+      ],
+      "l_wrist": [
+       68.0,
+       146.2
+      ]
+     }
+    }
+   ],
+   "rotate": 0.0,
+   "sparkle": true
+  },
+  {
+   "name": "l_glove",
+   "layer": "front",
+   "views": [
+    {
+     "file": "l_glove.png",
+     "size": [
+      251,
+      320
+     ],
+     "anchors": {
+      "l_elbow": [
+       56.4,
+       -268.3
+      ],
+      "l_wrist": [
+       123.7,
+       113.4
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "l_boot",
+   "layer": "front",
+   "views": [
+    {
+     "file": "l_boot.png",
+     "size": [
+      152,
+      320
+     ],
+     "anchors": {
+      "l_knee": [
+       76.0,
+       0.7
+      ],
+      "l_ankle": [
+       76.0,
+       242.9
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "r_glove",
+   "layer": "front",
+   "views": [
+    {
+     "file": "r_glove.png",
+     "size": [
+      251,
+      320
+     ],
+     "anchors": {
+      "r_elbow": [
+       194.6,
+       -268.3
+      ],
+      "r_wrist": [
+       127.3,
+       113.4
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "r_boot",
+   "layer": "front",
+   "views": [
+    {
+     "file": "r_boot.png",
+     "size": [
+      152,
+      320
+     ],
+     "anchors": {
+      "r_knee": [
+       76.0,
+       0.7
+      ],
+      "r_ankle": [
+       76.0,
+       242.9
+      ]
+     }
+    }
+   ]
+  }
+ ]
+}

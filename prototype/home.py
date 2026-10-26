@@ -239,7 +239,7 @@ class HomeRenderer:
     def dressup_art(self, screen, art, t):
         """Costume previews taking turns: one in front, the others peeking from the sides."""
         pygame.draw.rect(screen, (60, 26, 80), art)
-        names = [n for n in ("knight", "royal", "astronaut", "wizard", "superhero", "pirate")
+        names = [n for n in ("knight", "royal", "viking", "wizard", "dark_knight", "gladiator", "archer", "pirate", "superhero")
                  if (COSTUMES / n / "preview.png").exists()]
         if not names:
             return

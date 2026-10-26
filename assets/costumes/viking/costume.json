@@ -1,0 +1,272 @@
+{
+ "version": 1,
+ "name": "VIKING",
+ "scene": "scene.jpg",
+ "pieces": [
+  {
+   "name": "helmet",
+   "layer": "front",
+   "views": [
+    {
+     "file": "helmet.png",
+     "size": [
+      320,
+      315
+     ],
+     "anchors": {
+      "l_ear": [
+       224.3,
+       161.2
+      ],
+      "r_ear": [
+       95.7,
+       161.2
+      ]
+     },
+     "ratio": 0.0,
+     "scale_ref": {
+      "l_shoulder": [
+       260.0,
+       271.9
+      ],
+      "r_shoulder": [
+       60.0,
+       271.9
+      ]
+     }
+    },
+    {
+     "file": "helmet_a.png",
+     "size": [
+      290,
+      320
+     ],
+     "anchors": {
+      "l_ear": [
+       200.6,
+       163.8
+      ],
+      "r_ear": [
+       93.6,
+       163.8
+      ]
+     },
+     "ratio": 0.194,
+     "scale_ref": {
+      "l_shoulder": [
+       248.7,
+       276.2
+      ],
+      "r_shoulder": [
+       45.5,
+       276.2
+      ]
+     }
+    },
+    {
+     "file": "helmet_b.png",
+     "size": [
+      290,
+      320
+     ],
+     "anchors": {
+      "l_ear": [
+       196.4,
+       163.8
+      ],
+      "r_ear": [
+       89.4,
+       163.8
+      ]
+     },
+     "ratio": -0.194,
+     "scale_ref": {
+      "l_shoulder": [
+       244.5,
+       276.2
+      ],
+      "r_shoulder": [
+       41.3,
+       276.2
+      ]
+     }
+    }
+   ],
+   "min_vis": 0.3
+  },
+  {
+   "name": "cape",
+   "layer": "behind",
+   "views": [
+    {
+     "file": "cape.png",
+     "size": [
+      320,
+      253
+     ],
+     "anchors": {
+      "l_shoulder": [
+       219.9,
+       13.6
+      ],
+      "r_shoulder": [
+       98.5,
+       13.6
+      ],
+      "mid_hip": [
+       159.2,
+       139.3
+      ]
+     },
+     "swing_y": 13.6
+    }
+   ],
+   "swing": {
+    "sway": 0.02
+   }
+  },
+  {
+   "name": "armour",
+   "layer": "front",
+   "views": [
+    {
+     "file": "armour.png",
+     "size": [
+      320,
+      248
+     ],
+     "anchors": {
+      "l_shoulder": [
+       264.5,
+       57.5
+      ],
+      "r_shoulder": [
+       55.5,
+       57.5
+      ],
+      "mid_hip": [
+       160.0,
+       273.9
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "axe",
+   "layer": "front",
+   "views": [
+    {
+     "file": "axe.png",
+     "size": [
+      174,
+      320
+     ],
+     "anchors": {
+      "r_elbow": [
+       123.1,
+       -41.0
+      ],
+      "r_wrist": [
+       109.1,
+       38.5
+      ]
+     }
+    }
+   ],
+   "sparkle": true
+  },
+  {
+   "name": "l_glove",
+   "layer": "front",
+   "views": [
+    {
+     "file": "l_glove.png",
+     "size": [
+      251,
+      320
+     ],
+     "anchors": {
+      "l_elbow": [
+       56.4,
+       -268.3
+      ],
+      "l_wrist": [
+       123.7,
+       113.4
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "l_boot",
+   "layer": "front",
+   "views": [
+    {
+     "file": "l_boot.png",
+     "size": [
+      174,
+      320
+     ],
+     "anchors": {
+      "l_knee": [
+       87.0,
+       -43.6
+      ],
+      "l_ankle": [
+       87.0,
+       233.5
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "r_glove",
+   "layer": "front",
+   "views": [
+    {
+     "file": "r_glove.png",
+     "size": [
+      251,
+      320
+     ],
+     "anchors": {
+      "r_elbow": [
+       194.6,
+       -268.3
+      ],
+      "r_wrist": [
+       127.3,
+       113.4
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "r_boot",
+   "layer": "front",
+   "views": [
+    {
+     "file": "r_boot.png",
+     "size": [
+      174,
+      320
+     ],
+     "anchors": {
+      "r_knee": [
+       87.0,
+       -43.6
+      ],
+      "r_ankle": [
+       87.0,
+       233.5
+      ]
+     }
+    }
+   ]
+  }
+ ]
+}
