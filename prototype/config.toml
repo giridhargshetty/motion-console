@@ -90,6 +90,8 @@ hits_to_lose = 15    # punches you can take (your health bar)
 punch_speed = 3.0    # hand speed for a punch, torso-lengths per second (like slicing). Lower = easier
 punch_forward_speed = 2.5  # or: hand moving TOWARD the camera this fast (MediaPipe depth; noisy)
 punch_cooldown = 0.35      # seconds between punches with the same hand
+punch_extension = 0.75     # the arm must straighten to this (1.0 = fully straight) for a punch to count;
+                           # raising your gloves to block keeps the arms bent, so it doesn't hit
 hit_immunity = 0.6   # after landing a punch, the boxer can't be hit again for this long (no flurries)
 dodge_lean = 0.5     # head moved this many torso-lengths sideways since the wind-up = dodged
 dodge_duck = 0.4     # ...or this far down

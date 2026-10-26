@@ -18,6 +18,8 @@ import random
 import effects
 
 NOSE, L_SHOULDER, R_SHOULDER, L_WRIST, R_WRIST, L_HIP, R_HIP = 0, 11, 12, 15, 16, 23, 24
+L_ELBOW, R_ELBOW = 13, 14
+ARMS = ((L_SHOULDER, L_ELBOW, L_WRIST), (R_SHOULDER, R_ELBOW, R_WRIST))
 COUNTDOWN = 3
 TARGET = (0.5, 0.33)   # boxer's head, as a fraction of (play-area width, height)
 TARGET_REACH = 0.32    # punches ending within this many screen-heights of it count as aimed at the boxer
@@ -66,6 +68,32 @@ def classify_punch(vx, vy, vz, speed_needed, forward_needed):
     if planar >= speed_needed:
         return "hook" if abs(vx) > 1.5 * abs(vy) else "jab"
     return None
+
+
+def arm_extension(kp, arm, frame_aspect=1.0):
+    """How straight an arm is: shoulder-to-wrist distance / (upper arm + forearm), in 3D with
+    MediaPipe's depth, so a punch straight at the camera (short on screen) still reads as straight.
+    About 1.0 = fully extended, about 0.5 or less = bent (a guard, or arms resting). None if unseen.
+    frame_aspect (width/height of the camera picture) puts x, y and z on the same scale."""
+    s, e, w = (kp[i] for i in arm)
+    if min(s[2], e[2], w[2]) < 0.4:
+        return None
+
+    def p(k):
+        return k[0] * frame_aspect, k[1], (k[3] if len(k) > 3 else 0.0) * frame_aspect
+
+    def d(a, b):
+        return math.dist(p(a), p(b))
+    limb = d(s, e) + d(e, w)
+    return d(s, w) / limb if limb > 1e-6 else None
+
+
+def is_punch(ext_before, ext_after, guard_now, min_extension=0.75, min_gain=0.05):
+    """A punch straightens the arm: it ends extended, gets straighter during the move, and doesn't end
+    in a guard. (Raising both gloves to block is fast and ends near the boxer, but the arms stay bent.)"""
+    if guard_now or ext_after is None:
+        return False
+    return ext_after >= min_extension and (ext_before is None or ext_after - ext_before >= min_gain)
 
 
 def aimed_at(pos, vel, target, reach):
@@ -159,7 +187,7 @@ class Boxing:
         self.won = False
         self.paused = False
         self.head_at_windup = None
-        self.hand_prev = [None, None]  # per hand: (t, x, y, z) for velocities
+        self.hand_prev = [None, None]  # per hand: (t, x, y, z, arm extension) for velocities
         self.hand_next_punch = [0.0, 0.0]
         self.punch_glow = [0.0, 0.0]   # when each glove last punched (drawing grows it briefly)
         self.hurt_until = 0.0          # red flash after you're hit
@@ -309,12 +337,15 @@ class Boxing:
         torso = torso_norm(kp)
         a = self.lobby.aspect
         target = (TARGET[0] * a, TARGET[1])
+        view = self.lobby.view
+        frame_aspect = view.aspect * view.h / view.w  # the camera picture's own width/height
+        guard_now = guarding(kp)
         for i, (hand, wrist) in enumerate(zip(self.me.hands, (L_WRIST, R_WRIST))):
             if hand.pos is None or kp is None or not torso:
                 self.hand_prev[i] = None
                 continue
             z = kp[wrist][3] if len(kp[wrist]) > 3 else 0.0
-            now = (hand.t, hand.pos[0], hand.pos[1], z)
+            now = (hand.t, hand.pos[0], hand.pos[1], z, arm_extension(kp, ARMS[i], frame_aspect))
             prev, self.hand_prev[i] = self.hand_prev[i], now
             if prev is None or now[0] <= prev[0] or self.t < self.hand_next_punch[i]:
                 continue
@@ -326,6 +357,8 @@ class Boxing:
             kind = classify_punch(vx, vy, vz, b["punch_speed"], b["punch_forward_speed"])
             if kind is None or not aimed_at(hand.pos, (vx, vy), target, TARGET_REACH):
                 continue
+            if not is_punch(prev[4], now[4], guard_now, b.get("punch_extension", 0.75)):
+                continue  # fast, but the arm didn't straighten (e.g. raising the gloves to block)
             self.hand_next_punch[i] = self.t + b["punch_cooldown"]
             self.punch_glow[i] = self.t
             self.land_punch(kind, hand.pos)

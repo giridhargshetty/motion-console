@@ -163,3 +163,38 @@ def test_punches_on_a_guarding_boxer_are_blocked():
     g.opponent.go("guard", lobby.t, 5.0)
     g.land_punch("jab", (0.37, 0.33))
     assert g.landed == 0
+
+
+# ---- a punch straightens the arm; raising the gloves to block doesn't ----
+
+def arm_pose(elbow, wrist, wrist_z=0.0):
+    """Left arm only: shoulder at (0.45, 0.3), elbow and wrist where given (x, y), wrist depth z."""
+    kp = pose()
+    kp[bx.L_SHOULDER] = [0.45, 0.3, 0.99, 0.0]
+    kp[bx.L_ELBOW] = [*elbow, 0.99, 0.0]
+    kp[bx.L_WRIST] = [*wrist, 0.99, wrist_z]
+    return kp
+
+
+def test_bent_guard_arm_is_not_extended():
+    guard = arm_pose(elbow=(0.42, 0.42), wrist=(0.46, 0.24))       # elbow down, glove at the face
+    assert bx.arm_extension(guard, bx.ARMS[0]) < 0.6
+
+
+def test_straight_arm_on_screen_is_extended():
+    hook = arm_pose(elbow=(0.35, 0.3), wrist=(0.25, 0.3))           # arm out sideways
+    assert bx.arm_extension(hook, bx.ARMS[0]) > 0.9
+
+
+def test_jab_at_the_camera_counts_through_depth():
+    # Short on screen (wrist just in front of the shoulder), but far forward in depth.
+    jab = arm_pose(elbow=(0.45, 0.32), wrist=(0.46, 0.33), wrist_z=-0.25)
+    jab[bx.L_ELBOW][3] = -0.12
+    assert bx.arm_extension(jab, bx.ARMS[0]) > 0.8
+
+
+def test_is_punch_rules():
+    assert bx.is_punch(0.5, 0.9, guard_now=False)            # arm straightened: punch
+    assert not bx.is_punch(0.5, 0.9, guard_now=True)         # ended in a guard: blocking, not punching
+    assert not bx.is_punch(0.4, 0.55, guard_now=False)       # still bent (raising the gloves)
+    assert not bx.is_punch(0.92, 0.9, guard_now=False)       # already straight, not straightening
