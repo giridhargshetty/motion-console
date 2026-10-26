@@ -138,7 +138,8 @@ class Player:
 
 class Game:
     """All game state and rules; no drawing. States:
-    calibrate -> players (how many?) -> menu -> ready -> countdown -> play -> (boom) -> over -> menu ...
+    calibrate -> home (the console's home screen, home.py) -> players (how many?) -> menu -> ready
+    -> countdown -> play -> (boom) -> over -> menu ...
     1 player: BLUE, and the tracker looks for one person only. 2 players: BLUE (left) vs ORANGE (right)."""
 
     def __init__(self, cfg, scores):
@@ -150,9 +151,7 @@ class Game:
         self.best = scores
         self.state, self.state_t, self.hold = "calibrate", 0.0, 0.0
         self.mode = None
-        self.hover = {"classic": 0.0, "survival": 0.0, "players": 0.0, "settings": 0.0, "one": 0.0, "two": 0.0,
-                      "games": 0.0, "fruit": 0.0, "boxing": 0.0}
-        self.want_boxing = False  # picked on the game picker: the console switches to boxing
+        self.hover = {"classic": 0.0, "survival": 0.0, "players": 0.0, "home": 0.0, "one": 0.0, "two": 0.0}
         self.want_settings = False
         self.just_calibrated = False
         self.calib_ok, self.calib_msg = False, ""
@@ -263,19 +262,11 @@ class Game:
 
     def menu_zones(self):
         a = self.aspect
-        # The strip above head height (back to games, Wi-Fi): grown-ups reach it, resting arms never do.
+        # The strip above head height (home screen, player count): grown-ups reach it, resting arms never do.
         return {"classic": (0.05 * a, 0.14, 0.47 * a, 0.46),
                 "survival": (0.53 * a, 0.14, 0.95 * a, 0.46),
-                "games": (0.05 * a, 0.015, 0.47 * a, 0.09),
-                "settings": (0.53 * a, 0.015, 0.95 * a, 0.09)}
-
-    def game_zones(self):
-        """The game picker: one box per game, and the strip (players, Wi-Fi) above head height."""
-        a = self.aspect
-        return {"fruit": (0.05 * a, 0.14, 0.47 * a, 0.46),
-                "boxing": (0.53 * a, 0.14, 0.95 * a, 0.46),
-                "players": (0.05 * a, 0.015, 0.47 * a, 0.09),
-                "settings": (0.53 * a, 0.015, 0.95 * a, 0.09)}
+                "home": (0.05 * a, 0.015, 0.47 * a, 0.09),
+                "players": (0.53 * a, 0.015, 0.95 * a, 0.09)}
 
     def player_zones(self):
         a = self.aspect
@@ -283,7 +274,7 @@ class Game:
 
     def hover_needed(self, zone):
         m = self.cfg["menu"]
-        return m["settings_hover_seconds"] if zone in ("players", "settings", "games") else m["hover_seconds"]
+        return m["settings_hover_seconds"] if zone in ("players", "home") else m["hover_seconds"]
 
     @property
     def want_people(self):
@@ -347,18 +338,16 @@ class Game:
 
     def press(self, key):
         """Remote / keyboard shortcuts so the menus also work with a D-pad remote."""
-        if self.state == "players":
+        if self.state in ("players", "menu") and key in (pygame.K_ESCAPE, pygame.K_AC_BACK):
+            self.sounds.append("select")
+            self.goto("home")
+        elif self.state == "players":
             n = {pygame.K_LEFT: 1, pygame.K_RIGHT: 2}.get(key)
             if n:
                 self.choose_players(n)
-        elif self.state == "games":
-            choice = {pygame.K_LEFT: "fruit", pygame.K_RIGHT: "boxing",
-                      pygame.K_UP: "players", pygame.K_DOWN: "settings"}.get(key)
-            if choice:
-                self.pick_game(choice)
         elif self.state == "menu":
             choice = {pygame.K_LEFT: "classic", pygame.K_RIGHT: "survival",
-                      pygame.K_UP: "games", pygame.K_DOWN: "settings"}.get(key)
+                      pygame.K_UP: "home", pygame.K_DOWN: "players"}.get(key)
             if choice:
                 self.select(choice)
         elif self.state in ("ready", "over") and key in (pygame.K_RETURN, pygame.K_KP_ENTER):
@@ -380,6 +369,7 @@ class Game:
             # Slow motion for the flying objects only: same arcs, just slower. Frame rate unchanged.
             self.step_bodies(dt * self.g["fruit_speed"])
         self.fx.step(dt, self.g["gravity"])
+        return dt
 
     def _calibrate(self, fresh, dt, gone):
         if not self.rotation_locked:
@@ -392,9 +382,19 @@ class Game:
             self.calib_ok, self.calib_msg = self.calib_check(present[0].kp if present else None)
         self.hold = self.hold + dt if self.calib_ok else 0.0
         if self.hold >= self.cfg["calibrate"]["hold_seconds"]:
-            self.goto("players")
+            self.goto("home")
             self.sounds.append("ok")
             self.just_calibrated = True  # the main loop saves the camera rotation
+
+    def _home(self, fresh, dt, gone):
+        """The home screen itself is home.Home (run by the console); this only notices nobody's there."""
+        if gone > self.cfg["calibrate"]["lost_seconds"]:
+            self.goto("calibrate")
+
+    def start(self):
+        """Fruit Slice picked on the home screen: how many players, then the mode menu."""
+        self.hover = dict.fromkeys(self.hover, 0.0)
+        self.goto("players")
 
     def _players(self, fresh, dt, gone):
         if gone > self.cfg["calibrate"]["lost_seconds"]:
@@ -411,28 +411,7 @@ class Game:
         self.n_players = n
         self.hover = dict.fromkeys(self.hover, 0.0)
         self.sounds.append("select")
-        self.goto("games")
-
-    def _games(self, fresh, dt, gone):
-        if gone > self.cfg["calibrate"]["lost_seconds"]:
-            return self.goto("calibrate")
-        for zone, (x0, y0, x1, y1) in self.game_zones().items():
-            inside = any(h.pos and x0 <= h.pos[0] <= x1 and y0 <= h.pos[1] <= y1 for h in self.hands)
-            self.hover[zone] = self.hover[zone] + dt if inside else max(0.0, self.hover[zone] - 2 * dt)
-            if self.hover[zone] >= self.hover_needed(zone):
-                return self.pick_game(zone)
-
-    def pick_game(self, choice):
-        self.hover = dict.fromkeys(self.hover, 0.0)
-        self.sounds.append("select")
-        if choice == "fruit":
-            self.goto("menu")
-        elif choice == "boxing":
-            self.want_boxing = True  # the console hands over to the boxing game
-        elif choice == "players":
-            self.goto("players")
-        elif choice == "settings":
-            self.want_settings = True
+        self.goto("menu")
 
     def _menu(self, fresh, dt, gone):
         if gone > self.cfg["calibrate"]["lost_seconds"]:
@@ -446,10 +425,8 @@ class Game:
     def select(self, choice):
         self.hover = dict.fromkeys(self.hover, 0.0)
         self.sounds.append("select")
-        if choice == "settings":
-            self.want_settings = True  # the main loop opens the setup screens
-        elif choice == "games":
-            self.goto("games")
+        if choice in ("home", "players"):
+            self.goto(choice)
         else:
             self.mode = choice
             self.goto("ready")
@@ -1075,47 +1052,15 @@ class Renderer:
                             [f"{self.cfg['survival'].get('lives', 1)} lives - avoid bombs!",
                              "last one standing wins" if versus else f"best {game.best['survival']}"],
                             art(None, "bomb"))
-            self.choice_box(screen, rect, game, "games", zones["games"], to_layer, scale, "GAMES",
+            self.choice_box(screen, rect, game, "home", zones["home"], to_layer, scale, "HOME",
                             icon=self.grid_icon, compact=True)
-            self.choice_box(screen, rect, game, "settings", zones["settings"], to_layer, scale, "WI-FI",
-                            icon=self.wifi_icon, compact=True)
-            holding = any(game.hover[z] > 0 for z in zones)
-            self.message(screen, rect, "Keep holding..." if holding else "Hold your hand on a game", 0.55, 0.045,
-                         theme.GOLD if holding else theme.CREAM)
-            self.message(screen, rect, "Remote:  Left/Right = mode  |  Up = games  |  Down = Wi-Fi",
-                         0.63, 0.026, (200, 190, 170))
-        elif st == "games":
-            zones = game.game_zones()
-            versus = game.n_players == 2
-
-            def people(cx, cy, size):
-                cy += size * 0.15
-                if versus:
-                    self.person_icon(cx - size * 0.35, cy, size, game.players[0].glow)
-                    self.person_icon(cx + size * 0.35, cy, size, game.players[-1].glow)
-                else:
-                    self.person_icon(cx, cy, size * 1.1, game.players[0].glow)
-
-            def fruit_icon(cx, cy, size):
-                surf = self.art.get(fr.TYPES[9], max(8, int(size * 0.5)), "whole")
-                self.layer.blit(surf, surf.get_rect(center=(cx, cy)))
-
-            def glove_icon(cx, cy, size):
-                self.glove_icon(cx, cy, size, (220, 40, 40))
-
-            self.choice_box(screen, rect, game, "fruit", zones["fruit"], to_layer, scale, "FRUIT SLICE",
-                            ["slice the fruit!", "1 or 2 players"], fruit_icon)
-            self.choice_box(screen, rect, game, "boxing", zones["boxing"], to_layer, scale, "BOXING",
-                            ["beat the boxer!", "1 player" + (" (BLUE)" if versus else "")], glove_icon)
             self.choice_box(screen, rect, game, "players", zones["players"], to_layer, scale,
                             f"{game.n_players} PLAYER{'S' if versus else ''}", icon=people, compact=True,
                             icon_width=1.9 if versus else 1.2)
-            self.choice_box(screen, rect, game, "settings", zones["settings"], to_layer, scale, "WI-FI",
-                            icon=self.wifi_icon, compact=True)
             holding = any(game.hover[z] > 0 for z in zones)
-            self.message(screen, rect, "Keep holding..." if holding else "Pick a game", 0.55, 0.045,
+            self.message(screen, rect, "Keep holding..." if holding else "Hold your hand on a game", 0.55, 0.045,
                          theme.GOLD if holding else theme.CREAM)
-            self.message(screen, rect, "Remote:  Left/Right = game  |  Up = players  |  Down = Wi-Fi",
+            self.message(screen, rect, "Remote:  Left/Right = mode  |  Up = home  |  Down = players",
                          0.63, 0.026, (200, 190, 170))
         elif st == "ready":
             self.message(screen, rect, game.mode.upper(), 0.12, 0.08, theme.GOLD)
@@ -1196,7 +1141,7 @@ class Renderer:
                 r = theme.text(screen, theme.font(left.w * 0.24), line, theme.GOLD, outline=3,
                                midtop=(left.centerx, y))
                 y = r.bottom - 4
-            pre_game = game.state in ("calibrate", "players", "games", "menu")
+            pre_game = game.state in ("calibrate", "players", "home", "menu")
             if pre_game:
                 f = theme.font(left.w * 0.09, name="arial")
                 theme.text(screen, f, "BEST SCORES", theme.CREAM, midtop=(left.centerx, left.y + left.h * 0.5))
@@ -1241,7 +1186,7 @@ class Renderer:
             if not versus and game.mode == "classic" and game.state in ("play", "over"):
                 theme.text(screen, theme.font(right.w * 0.08, name="arial"), f"missed {game.missed}",
                            midtop=(right.centerx, right.y + right.h * 0.45))
-            if game.state in ("calibrate", "players", "games", "menu") and not hint:
+            if game.state in ("calibrate", "players", "home", "menu") and not hint:
                 theme.text(screen, theme.font(right.w * 0.11), "HOW TO PLAY", theme.GOLD, outline=2,
                            midtop=(right.centerx, right.y + 30))
                 steps = ["Stand where you can see your whole body",
@@ -1258,7 +1203,7 @@ class Renderer:
                         y += f.get_height()
                     y += f.get_height() * 0.5
             else:
-                hint = hint or {"calibrate": "Stand in the middle", "players": "How many?", "games": "Pick a game",
+                hint = hint or {"calibrate": "Stand in the middle", "players": "How many?", "home": "Pick a game",
                                 "menu": "Pick a game", "ready": "Hands up!",
                                 "countdown": "Get ready...", "play": "Slice!", "boom": "Ouch!",
                                 "over": "Well done!"}[game.state]

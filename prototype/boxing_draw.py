@@ -463,7 +463,7 @@ class BoxingRenderer:
         """Choose your fighter: one card per boxer with its idle animation, plus GAMES / WI-FI."""
         zones = g.zones()
         for i, spec in enumerate(g.boxers):
-            box = self.zone_rect(zones[f"boxer{i}"], to_px)
+            box = self.zone_rect(zones[f"boxer{i}"], W, H)
             frac = min(1.0, g.hover[f"boxer{i}"] / g.hover_needed(f"boxer{i}"))
             self.card(screen, box, frac)
             frames = boxer_sprites(spec)
@@ -480,19 +480,16 @@ class BoxingRenderer:
             level = LEVELS[min(i, 2)]
             theme.text(screen, theme.font(box.h * 0.045, name="arial"), f"{level}   wins {g.wins(i)}", theme.CREAM,
                        outline=1, center=(box.centerx, label.y + label.h * 0.75))
-        for zone, title in (("games", "GAMES"), ("settings", "WI-FI")):
-            box = self.zone_rect(zones[zone], to_px)
-            self.card(screen, box, min(1.0, g.hover[zone] / g.hover_needed(zone)))
-            theme.text(screen, theme.font(box.h * 0.5), title, theme.CREAM, outline=2, center=box.center)
-        for hand in g.lobby.hands:  # small gloves show where your hands point
-            if hand.pos is not None:
-                self.glove(screen, to_px(*hand.pos), H * 0.035, GLOVE_BLUE)
+        box = self.zone_rect(zones["home"], W, H)
+        self.card(screen, box, min(1.0, g.hover["home"] / g.hover_needed("home")))
+        theme.text(screen, theme.font(box.h * 0.5), "HOME", theme.CREAM, outline=2, center=box.center)
+        for u, v in g.lobby.pointers():  # small gloves show where your hands point
+            self.glove(screen, (int(u * W), int(v * H)), H * 0.035, GLOVE_BLUE)
 
     @staticmethod
-    def zone_rect(zone, to_px):
-        x0, y0, x1, y1 = zone
-        (px0, py0), (px1, py1) = to_px(x0, y0), to_px(x1, y1)
-        return pygame.Rect(px0, py0, px1 - px0, py1 - py0)
+    def zone_rect(zone, W, H):
+        u0, v0, u1, v1 = zone
+        return pygame.Rect(int(u0 * W), int(v0 * H), int((u1 - u0) * W), int((v1 - v0) * H))
 
     def card(self, screen, box, frac):
         """A dark glass panel; glows while a hand holds it and fills from the bottom."""
@@ -550,11 +547,11 @@ class BoxingRenderer:
             say("Connecting to the camera...", 0.45, 0.06, GOLD)
             say(f"({status})", 0.55, 0.035, (200, 190, 170), 2)
         elif st == "select":
-            say("CHOOSE YOUR FIGHTER", 0.135, 0.07, GOLD, 4)
+            say("CHOOSE YOUR FIGHTER", 0.075, 0.07, GOLD, 4)
             holding = any(v > 0 for v in g.hover.values())
-            say("Keep holding..." if holding else "Hold a hand on a fighter", 0.77, 0.045,
+            say("Keep holding..." if holding else "Raise a hand, point at a fighter and hold", 0.82, 0.045,
                 GOLD if holding else theme.CREAM)
-            say("Remote:  Left / OK / Right = fighter  |  Up = games  |  Down = Wi-Fi", 0.84, 0.028, (200, 190, 170), 2)
+            say("Remote:  Left / OK / Right = fighter  |  Up or Back = home", 0.89, 0.028, (200, 190, 170), 2)
         elif st == "ready":
             say(g.opponent.name, 0.3, 0.1, GOLD, 4)
             say(LEVELS[min(g.focus, 2)], 0.39, 0.04, theme.CREAM, 2)

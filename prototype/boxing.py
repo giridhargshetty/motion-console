@@ -166,8 +166,7 @@ class Boxing:
         self.message, self.message_until, self.message_color = "", 0.0, (255, 255, 255)
         self.fx = effects.Effects()
         self.sounds = []
-        self.done = False           # back to the game picker
-        self.want_settings = False
+        self.done = False           # back to the home screen
 
     # ---- helpers ----
 
@@ -183,16 +182,15 @@ class Boxing:
         self.state, self.state_t, self.hold, self.paused = state, self.t, 0.0, False
 
     def zones(self):
-        a = self.lobby.aspect
-        out = {f"boxer{i}": ((0.03 + 0.32 * i) * a, 0.18, (0.31 + 0.32 * i) * a, 0.7)
-               for i in range(len(self.boxers))}
-        out["games"] = (0.05 * a, 0.015, 0.47 * a, 0.09)
-        out["settings"] = (0.53 * a, 0.015, 0.95 * a, 0.09)
+        """Pickable areas in 0..1 of the screen, pointed at with a raised hand (lobby.pointers(), so
+        arms resting at your sides pick nothing): a card per boxer, and HOME in the strip on top."""
+        out = {f"boxer{i}": (0.04 + 0.32 * i, 0.2, 0.32 + 0.32 * i, 0.74) for i in range(len(self.boxers))}
+        out["home"] = (0.04, 0.03, 0.3, 0.12)
         return out
 
     def hover_needed(self, zone):
         m = self.cfg["menu"]
-        return m["settings_hover_seconds"] if zone in ("games", "settings") else m["hover_seconds"]
+        return m["settings_hover_seconds"] if zone == "home" else m["hover_seconds"]
 
     def wins(self, i):
         return self.scores.get(f"boxing_{self.boxers[i]['sprite']}", 0)
@@ -204,7 +202,9 @@ class Boxing:
 
     def press(self, key):
         import pygame  # only the console's key codes; keeps the rules testable without a display
-        if self.state == "select":
+        if key in (pygame.K_ESCAPE, pygame.K_AC_BACK) and self.state in ("select", "ready", "result"):
+            self.pick("home")  # Back: to the home screen
+        elif self.state == "select":
             # One key per boxer, so the choice is visible straight away: Left / OK / Right.
             n = len(self.boxers)
             pick = {pygame.K_LEFT: 0, pygame.K_RETURN: min(1, n - 1), pygame.K_KP_ENTER: min(1, n - 1),
@@ -212,9 +212,7 @@ class Boxing:
             if pick is not None:
                 self.pick(f"boxer{pick}")
             elif key == pygame.K_UP:
-                self.pick("games")
-            elif key == pygame.K_DOWN:
-                self.pick("settings")
+                self.pick("home")
         elif self.state in ("ready", "result") and key in (pygame.K_RETURN, pygame.K_KP_ENTER):
             if self.state == "ready":
                 self.goto("countdown")
@@ -225,10 +223,8 @@ class Boxing:
     def pick(self, zone):
         self.hover = dict.fromkeys(self.hover, 0.0)
         self.sounds.append("select")
-        if zone == "games":
+        if zone == "home":
             self.done = True
-        elif zone == "settings":
-            self.want_settings = True
         else:
             self.focus = int(zone[5:])
             self.opponent = Opponent(self.boxers[self.focus], self.rng)
@@ -241,8 +237,9 @@ class Boxing:
         self.fx.step(dt, self.cfg["game"]["gravity"])
 
     def _select(self, dt, fresh):
+        pointers = self.lobby.pointers()
         for zone, (x0, y0, x1, y1) in self.zones().items():
-            inside = any(h.pos and x0 <= h.pos[0] <= x1 and y0 <= h.pos[1] <= y1 for h in self.lobby.hands)
+            inside = any(x0 <= u <= x1 and y0 <= v <= y1 for u, v in pointers)
             self.hover[zone] = self.hover[zone] + dt if inside else max(0.0, self.hover[zone] - 2 * dt)
             if self.hover[zone] >= self.hover_needed(zone):
                 return self.pick(zone)
