@@ -9,7 +9,7 @@ further down still works if you ever need it.
 ## Linux kiosk (recommended)
 
 ```
-laptop:  edit -> test -> git commit -> git push  ──►  GitHub (private repo: giridhargshetty/motion-console)
+laptop:  edit -> test -> git commit -> git push  ──►  GitHub (this repo, or your fork)
 mini PC: power on -> auto-login tty1 -> console.sh: git pull -> xinit (bare X, full screen) -> game
                                                            game: adb -> DroidCam phone app -> pictures
 ```
@@ -35,8 +35,10 @@ setup). The TV's own remote can't reach a PC: that needs HDMI-CEC, which PCs alm
 
 ### Install (you, once, about 30 minutes)
 
-1. Download **Ubuntu Server 24.04 LTS** (ubuntu.com/download/server) and write it to a USB stick
-   with balenaEtcher. This erases the mini PC's disk.
+1. Download **Ubuntu Server** (24.04 LTS or newer; tested on 26.04) from ubuntu.com/download/server
+   and write it to a USB stick with balenaEtcher. This erases the mini PC's disk. A network cable is
+   easiest during the install; if it was installed without a network, run
+   `sudo bash deploy/linux/enable_ethernet.sh` afterwards to switch on the wired port.
 2. Boot the mini PC from the stick (Dell: F12 at power-on for the boot menu). In the installer:
    use the whole disk, pick a username/password, and tick **Install OpenSSH server**.
 3. After the reboot, sign in on the mini PC and add it to Tailscale:
@@ -44,28 +46,26 @@ setup). The TV's own remote can't reach a PC: that needs HDMI-CEC, which PCs alm
 4. On the laptop: `ssh-copy-id <user>@<mini-pc-tailscale-name>` and type the mini PC password once.
 5. BIOS (F2 at power-on): **AC Recovery = Power On**, so the box starts as soon as it gets power.
 
-### Setup (Claude, over SSH)
+### Setup (on the box, or over SSH)
 
-1. Give the box read-only access to the private repo: an SSH key made on the box, added to the repo
-   as a **deploy key** (read-only, works only for this repo).
-2. `git clone git@github.com:giridhargshetty/motion-console.git ~/motion-console`
-3. `bash ~/motion-console/deploy/linux/setup.sh` installs packages (Python 3.12, adb + phone udev rules,
+1. `git clone https://github.com/giridhargshetty/motion-console.git ~/motion-console`
+   (or your own fork: the box pulls updates from wherever it was cloned from).
+2. `bash ~/motion-console/deploy/linux/setup.sh` installs packages (Python 3.12 via uv, adb + phone udev rules,
    a bare X server), builds `.venv`, downloads the pose models, writes `prototype/config.local.toml`
    (fullscreen), sets auto-login on tty1 to start `deploy/linux/console.sh`, and speeds up boot.
-4. Phone: plug it in, tap **Allow** on "Allow USB debugging?" (tick "Always allow"), and turn on
+3. Phone: plug it in, tap **Allow** on "Allow USB debugging?" (tick "Always allow"), and turn on
    Developer options -> **Stay awake**.
-5. `sudo reboot`, then check `logs/console.log`, the frame rate and pose time on the debug line,
-   and record the mini PC numbers in `bench/RESULTS.md` (the Phase 0 gate names this machine).
+4. `sudo reboot`, then check `logs/console.log`, and the frame rate and pose time on the debug line (`D`).
 
 ### Updating
 
-Commit and push on the laptop; then either restart the box, or over SSH:
+Push to the repo the box was cloned from; then either restart the box, or over SSH:
 `bash ~/motion-console/deploy/linux/update.sh` (pulls, then restarts the game; no password or reboot).
 
 ## Windows (alternative)
 
 ```
-laptop:  edit -> test -> git commit -> git push  ──►  GitHub (private repo)
+laptop:  edit -> test -> git commit -> git push  ──►  GitHub
 mini PC: power on -> auto sign-in -> console.ps1: git pull -> phone app + DroidCam -> game
 ```
 
@@ -87,12 +87,11 @@ mini PC: power on -> auto sign-in -> console.ps1: git pull -> phone app + DroidC
 
 1. Copy `deploy\setup_minipc.ps1` to the mini PC (USB stick, or download it from the GitHub repo page) and run in PowerShell:
    ```
-   powershell -ExecutionPolicy Bypass -File setup_minipc.ps1 -RepoUrl https://github.com/<you>/<repo>.git
+   powershell -ExecutionPolicy Bypass -File setup_minipc.ps1 -RepoUrl https://github.com/giridhargshetty/motion-console.git
    ```
    It installs Git, Python 3.12 and Google's `adb` (Android platform tools) if missing, clones to
    `%USERPROFILE%\motion-console`, installs packages, downloads the pose models, writes
    `prototype\config.local.toml` (fullscreen on), and adds the Startup shortcut.
-   For a private repo, Git opens a GitHub sign-in window once and remembers it.
 2. **Phone:** the DroidCam app installed (Play Store), USB debugging on, and Developer options ->
    **Stay awake** on, so the screen doesn't lock while it's charging over USB. The first time you plug it
    into the mini PC, tap **Allow** on "Allow USB debugging?" with "Always allow from this computer" ticked.

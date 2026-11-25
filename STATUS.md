@@ -1,7 +1,7 @@
 # Project status: paused 2026-11-25
 
-The mini PC (Dell Wyse 7040) is being reused as a home server, so the console is on hold.
-Everything needed to carry on is in this repo (github.com/giridhargshetty/motion-console, private).
+The prototype works and has been played at home. The mini PC it ran on (a Dell Wyse 7040) has been
+reused for something else, so development is on hold. Everything needed to carry on is in this repo.
 
 ## What exists
 
@@ -31,7 +31,7 @@ Phase 0 closed (see `bench/RESULTS.md`); Phase 1 prototype done and playtested; 
 - Display 62 fps at 720p (the TV is set to 1280x720@60; drawing 4K on the CPU was the old slowdown).
 - Pose: ~12-20 ms one person (full model), ~35 ms two people (lite model).
 
-## Backup of the box
+## Backup of the last box
 
 `backups/minipc-2026-11-25/`
 - `box-files.tar.gz`: `logs/` (perf, console, errors, `camera_rotation.json`),
@@ -53,14 +53,13 @@ Things learned the hard way:
   must not run (it takes the phone's only video connection).
 - The Wyse has no Wi-Fi card; the MT7601U USB adapter works out of the box.
 - pygame's SDL has no Wayland support and cage's Xwayland crashed: the kiosk uses bare X (xinit).
-- The box's GitHub access is a read-only deploy key ("motionbox ... read-only" in the repo's
-  Settings -> Deploy keys); remove it if the box won't come back.
 
-## Open question when we resume
+## Idea for the future: run directly on Android TVs
 
-Running on the hotel's **Hisense Android TVs** without a mini PC: the hotel server would host the
-games as a web page (and updates/scores), and each TV runs body tracking itself in the browser, so no
-camera video leaves the room. Needs a rewrite of the games in JavaScript. First steps:
+Running on smart TVs (for example Hisense Android TVs in a hotel) without a PC: a server would host
+the games as a web page (plus updates and scores), and each TV runs body tracking itself in the
+browser, so no camera video ever leaves the room. Needs a rewrite of the games in JavaScript.
+First steps:
 1. TV model number -> look up its chip and memory.
 2. Check a USB webcam works on the TV (a video-call app).
 3. Build a small tracking-only test app and measure fps on the TV. Expect 1 player with the lite
