@@ -1,0 +1,36 @@
+## System
+Operating System: Ubuntu 26.04.1 LTS
+          Kernel: Linux 7.0.0-38-generic
+ Hardware Vendor: Dell Inc.
+  Hardware Model: OptiPlex 7050
+    Hardware SKU: 07A1
+Hardware Version: A00
+Model name:                              Intel(R) Core(TM) i5-6500 CPU @ 3.20GHz
+Mem:            18Gi       1.0Gi        16Gi        39Mi       2.0Gi        17Gi
+NAME    SIZE MODEL
+sda   476.9G POWER X SS1000
+
+## Network config (netplan file names)
+00-installer-config.yaml
+60-motion-console-ethernet.yaml
+90-motion-console-nm.yaml
+
+## Kiosk pieces installed by deploy/linux/setup.sh
+autologin.conf
+# motion-console kiosk (SSH logins are unaffected)
+if [ "$(tty)" = "/dev/tty1" ]; then
+    exec "/home/box/motion-console/deploy/linux/console.sh"
+fi
+
+## Python
+Python 3.12.15
+mediapipe==1.1.1
+numpy==2.5.4
+opencv-python==5.0.0.93
+pygame==2.6.1
+
+## USB devices
+Bus 001 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub
+Bus 001 Device 002: ID 0bda:f179 Realtek Semiconductor Corp. RTL8188FTV 802.11b/g/n 1T1R 2.4G WLAN Adapter
+Bus 001 Device 003: ID 046d:c534 Logitech, Inc. Nano Receiver
+Bus 002 Device 001: ID 1d6b:0003 Linux Foundation 3.0 root hub
